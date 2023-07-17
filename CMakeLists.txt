@@ -419,3 +419,9 @@ if (CUDAQ_BUILD_RELOCATABLE_PACKAGE)
   install(PROGRAMS ${LLVM_BINARY_DIR}/bin/clang DESTINATION bin)
   install(PROGRAMS ${LLVM_BINARY_DIR}/bin/clang++ DESTINATION bin)
 endif()
+
+# Code coverage setup
+# ==============================================================================
+if(CUDAQ_ENABLE_CC)
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fprofile-arcs -ftest-coverage")
+endif(CUDAQ_ENABLE_CC)
