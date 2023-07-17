@@ -1,0 +1,61 @@
+name: Show Code Coverage
+on:
+  pull_request:
+    branches:
+      - enable-codecoverage-pipeline
+  push:
+    branches:
+      - enable-codecoverage-pipeline
+      
+
+jobs:
+  run:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+    env:
+      OS: ${{ matrix.os }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Build Image And CUDA Quantum
+        id: cudaq_build
+        run: |
+          docker build -t cuda-quantum-cc:local -f docker/build/cudaq.cc.Dockerfile . \
+            --build-arg install="CMAKE_BUILD_TYPE=Debug CUDAQ_ENABLE_CC=ON"
+
+      - name: Create Shared Dir
+        run: |
+          mkdir -p /home/runner/work/shared
+
+      - name: Test CUDA Quantum And Generate CC
+        uses: addnab/docker-run-action@v3
+        with:
+          image: cuda-quantum-cc:local
+          options: -v /home/runner/work/shared:/shared
+          shell: bash
+          run: |
+            cd $CUDAQ_REPO_ROOT
+            LLVM_PROFILE_FILE=/tmp/llvm_unittest_profile/profile-%9m.profraw ctest --output-on-failure --test-dir build -E ctest-nvqpp
+            ctest_status=$?
+            /opt/llvm/bin/llvm-lit -v --param nvqpp_site_config=build/test/lit.site.cfg.py build/test
+            lit_status=$?
+            # llvm-profdata-15 merge -sparse /tmp/llvm_unittest_profile/profile-*.profraw /workspaces/cuda-quantum/build/test/Target/OpenQASM/default.profraw /workspaces/cuda-quantum/build/test/Target/IQM/default.profraw /workspaces/cuda-quantum/build/test/NVQPP/default.profraw /workspaces/cuda-quantum/build/test/Transforms/DecompositionPatterns/default.profraw /workspaces/cuda-quantum/build/test/Transforms/BasisConversion/default.profraw /workspaces/cuda-quantum/build/test/Transforms/default.profraw /workspaces/cuda-quantum/build/test/AST-Quake/default.profraw -o coverage.profdata
+            llvm-profdata-15 merge -sparse /tmp/llvm_unittest_profile/profile-*.profraw -o coverage.profdata
+            llvm-cov-15 show /workspaces/cuda-quantum/build/bin/cudaq-opt -object /workspaces/cuda-quantum/build/bin/CircuitCheck -object /workspaces/cuda-quantum/build/bin/cudaq-lsp-server -object /workspaces/cuda-quantum/build/bin/cudaq-quake -object /workspaces/cuda-quantum/build/bin/cudaq-translate -object /workspaces/cuda-quantum/build/unittests/test_domains -object /workspaces/cuda-quantum/build/unittests/test_qudit -object /workspaces/cuda-quantum/build/unittests/test_runtime_dm -object /workspaces/cuda-quantum/build/unittests/test_runtime_qpp -object /workspaces/cuda-quantum/build/unittests/test_spin -object /workspaces/cuda-quantum/build/unittests/Optimizer/OptimizerUnitTests -object /workspaces/cuda-quantum/build/unittests/Optimizer/test_quake_synth -object /workspaces/cuda-quantum/build/unittests/backends/quantinuum/test_quantinuum -object /workspaces/cuda-quantum/build/unittests/backends/qpp_observe/test_observe_backend -instr-profile=coverage.profdata > coverage.txt
+            # /opt/llvm/bin/llvm-profdata merge -sparse /tmp/llvm_unittest_profile/profile-*.profraw /workspaces/cuda-quantum/build/test/Target/OpenQASM/default.profraw /workspaces/cuda-quantum/build/test/Target/IQM/default.profraw /workspaces/cuda-quantum/build/test/NVQPP/default.profraw /workspaces/cuda-quantum/build/test/Transforms/DecompositionPatterns/default.profraw /workspaces/cuda-quantum/build/test/Transforms/BasisConversion/default.profraw /workspaces/cuda-quantum/build/test/Transforms/default.profraw /workspaces/cuda-quantum/build/test/AST-Quake/default.profraw -o coverage.profdata
+            # /opt/llvm/bin/llvm-cov show /workspaces/cuda-quantum/build/bin/cudaq-opt -object /workspaces/cuda-quantum/build/bin/CircuitCheck -object /workspaces/cuda-quantum/build/bin/cudaq-lsp-server -object /workspaces/cuda-quantum/build/bin/cudaq-quake -object /workspaces/cuda-quantum/build/bin/cudaq-translate -object /workspaces/cuda-quantum/build/unittests/test_domains -object /workspaces/cuda-quantum/build/unittests/test_qudit -object /workspaces/cuda-quantum/build/unittests/test_runtime_dm -object /workspaces/cuda-quantum/build/unittests/test_runtime_qpp -object /workspaces/cuda-quantum/build/unittests/test_spin -object /workspaces/cuda-quantum/build/unittests/Optimizer/OptimizerUnitTests -object /workspaces/cuda-quantum/build/unittests/Optimizer/test_quake_synth -object /workspaces/cuda-quantum/build/unittests/backends/quantinuum/test_quantinuum -object /workspaces/cuda-quantum/build/unittests/backends/qpp_observe/test_observe_backend -instr-profile=coverage.profdata > coverage.txt
+            cp ./coverage.txt /shared
+            if [ ! $ctest_status -eq 0 ] || [ ! $lit_status -eq 0 ]; then
+              echo "ctest status = " $ctest_status
+              echo "llvm-lit status = " $lit_status
+              # exit 1
+            fi
+
+      - name: Upload Coverage To Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          files: /home/runner/work/shared/coverage.txt
+          verbose: true

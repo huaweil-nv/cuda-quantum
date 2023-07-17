@@ -110,6 +110,7 @@ option(CUDAQ_TEST_MOCK_SERVERS "Enable Remote QPU Tests via Mock Servers." OFF)
 option(CUDAQ_DISABLE_RUNTIME "Build without the CUDA Quantum runtime, just the compiler toolchain." OFF)
 option(CUDAQ_SKIP_MPI "Do not build with MPI, even when it is available." OFF)
 option(CUDAQ_DISABLE_CPP_FRONTEND "Build without the CUDA Quantum C++ Clang-based Frontend." OFF)
+OPTION(CUDAQ_ENABLE_CC "Enable code coverage flags, must build with debug mode" OFF)
 
 # We allow to pick up certain build configurations directly from the environment,
 # since this facilitates some of the packaging (e.g. python packages built based on the pyproject.toml).
@@ -372,6 +373,20 @@ endif()
 
 # Check for OpenSSL
 find_package(OpenSSL)
+
+# Check for CURL and OpenSSL
+find_package(CURL COMPONENTS HTTP HTTPS QUIET) 
+find_package(OpenSSL QUIET)
+
+# Code coverage setup
+# ==============================================================================
+# if(CUDAQ_ENABLE_CC)
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fprofile-arcs -ftest-coverage")
+else()
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fprofile-instr-generate -fcoverage-mapping")
+endif()
+# endif(CUDAQ_ENABLE_CC)
 
 # Optionally build with MPI
 if (NOT CUDAQ_SKIP_MPI)
