@@ -27,6 +27,7 @@ SHELL ["/bin/bash", "-c"]
 
 ARG llvm_commit
 ARG toolchain=llvm
+ARG llvm_build_rt_flag=""
 
 # When a dialogue box would be needed during install, assume default configurations.
 # Set here to avoid setting it for all install commands. 
@@ -67,8 +68,20 @@ RUN LLVM_INSTALL_PREFIX=/opt/llvm LLVM_SOURCE=/llvm-project \
         source scripts/install_toolchain.sh -e /opt/llvm/bootstrap -t ${toolchain}
 RUN source /opt/llvm/bootstrap/init_command.sh && \
     LLVM_INSTALL_PREFIX=/opt/llvm \
-        bash /scripts/build_llvm.sh -s /llvm-project -c Release -v \
+        bash /scripts/build_llvm.sh -s /llvm-project -c Release -v ${llvm_build_rt_flag} \
     && rm -rf /llvm-project 
+
+# Here, a specific commit of llvm-lit is built when generating code coverage per PR.
+# because only this version of llvm-lit is capable of generating complete coverage files for each case.
+# Other versions haven't effectively addressed the issue of truncating coverage files during parallel execution.
+# Refer to: https://reviews.llvm.org/D154280
+RUN if [ "$llvm_build_rt_flag" = "-r" ]; then \
+        mkdir -p /opt/llvm/llvm-project && cd /opt/llvm/llvm-project && git init \
+        && git remote add origin https://github.com/llvm/llvm-project \
+        && git fetch origin --depth=1 64d19542e78a43edb7ae26ea6762a2b1c360a916 && git reset --hard FETCH_HEAD \
+        && source /opt/llvm/bootstrap/init_command.sh \
+        && LLVM_INSTALL_PREFIX=/tmp/llvm bash /scripts/build_llvm.sh -s /opt/llvm/llvm-project -c Release -p "lld"; \
+    fi
 
 # Todo: 
 # - remove http://apt.llvm.org/jammy/ in the install_toolchain.sh and use
