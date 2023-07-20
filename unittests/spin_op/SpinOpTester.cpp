@@ -212,3 +212,12 @@ TEST(SpinOpTester, checkDistributeTerms) {
   EXPECT_EQ(distributed[0].num_terms(), 2);
   EXPECT_EQ(distributed[1].num_terms(), 3);
 }
+
+TEST(SpinOpTester, codecovTest) {
+  int b = 1;
+  if (b > 0) {
+    b += 1;
+  } else {
+    b += 2;
+  }
+}
