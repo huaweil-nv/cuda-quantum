@@ -344,6 +344,8 @@ public:
   /// @brief Return a dense matrix representation of this
   /// spin_op.
   complex_matrix to_matrix() const;
+
+  void test_codecov(int val) const;
 };
 
 /// @brief Add a double and a spin_op

@@ -212,3 +212,9 @@ TEST(SpinOpTester, checkDistributeTerms) {
   EXPECT_EQ(distributed[0].num_terms(), 2);
   EXPECT_EQ(distributed[1].num_terms(), 3);
 }
+
+TEST(SpinOpTester, codecov)
+{
+  cudaq::spin_op op = x(10);
+  op.test_codecov(1);
+}
