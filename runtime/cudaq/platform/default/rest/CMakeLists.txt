@@ -8,7 +8,7 @@
 
 set(INTERFACE_POSITION_INDEPENDENT_CODE ON)
 
-message(STATUS "Curl and OpenSSL Available. Building REST QPU.")
+message(STATUS "Building REST QPU.")
 add_library(cudaq-rest-qpu SHARED RemoteRESTQPU.cpp 
    ../../common/QuantumExecutionQueue.cpp
    Executor.cpp)
@@ -30,8 +30,6 @@ target_link_libraries(cudaq-rest-qpu
     fmt::fmt-header-only 
     cudaq 
     cudaq-platform-default)
-
-cudaq_library_set_rpath(cudaq-rest-qpu)
 
 install(TARGETS cudaq-rest-qpu DESTINATION lib)
 

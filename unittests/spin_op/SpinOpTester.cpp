@@ -218,3 +218,12 @@ TEST(SpinOpTester, codecov)
   cudaq::spin_op op = x(10);
   op.test_codecov(1);
 }
+
+TEST(SpinOpTester, codecovTest) {
+  int b = 1;
+  if (b > 0) {
+    b += 1;
+  } else {
+    b += 2;
+  }
+}

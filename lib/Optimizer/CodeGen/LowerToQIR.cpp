@@ -6,7 +6,16 @@
  * the terms of the Apache License 2.0 which accompanies this distribution.    *
  ******************************************************************************/
 
+#if (defined(__GNUC__) && !defined(__clang__) && !defined(__INTEL_COMPILER))
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wstringop-overflow"
+#pragma GCC diagnostic ignored "-Wrestrict"
+#endif
 #include "PassDetails.h"
+#if (defined(__GNUC__) && !defined(__clang__) && !defined(__INTEL_COMPILER))
+#pragma GCC diagnostic pop
+#endif
+
 #include "cudaq/Optimizer/Builder/CUDAQBuilder.h"
 #include "cudaq/Optimizer/CodeGen/Passes.h"
 #include "cudaq/Optimizer/CodeGen/Peephole.h"
@@ -356,12 +365,11 @@ public:
     auto context = parentModule->getContext();
     std::string qirQisPrefix(cudaq::opt::QIRQISPrefix);
     std::string instName = instOp->getName().stripDialect().str();
-    if (!instOp->template hasTrait<cudaq::Hermitian>() && instOp.getIsAdj())
-      instName += "dg";
 
     if (numControls == 0) {
       // There are no control bits, so call the function directly.
-      auto qirFunctionName = qirQisPrefix + instName;
+      auto qirFunctionName =
+          qirQisPrefix + instName + (instOp.getIsAdj() ? "__adj" : "");
       FlatSymbolRefAttr symbolRef =
           cudaq::opt::factory::createLLVMFunctionSymbol(
               qirFunctionName, /*return type=*/LLVM::LLVMVoidType::get(context),
@@ -707,7 +715,7 @@ public:
     std::vector<Value> args{adaptor.getOperands().front()};
 
     bool appendName;
-    if (regName) {
+    if (regName && !regName.cast<StringAttr>().getValue().empty()) {
       // Change the function name
       qFunctionName += "__to__register";
       // Append a string type argument
@@ -1333,9 +1341,8 @@ public:
     target.addLegalDialect<LLVM::LLVMDialect>();
     target.addLegalOp<ModuleOp>();
 
-    if (failed(applyFullConversion(getModule(), target, std::move(patterns)))) {
+    if (failed(applyFullConversion(getModule(), target, std::move(patterns))))
       signalPassFailure();
-    }
   }
 };
 

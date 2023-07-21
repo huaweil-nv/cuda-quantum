@@ -6,17 +6,23 @@
 # the terms of the Apache License 2.0 which accompanies this distribution.     #
 # ============================================================================ #
 
+
 import cudaq, pytest, os, time
 from cudaq import spin
-from utils.mock_qpu.ionq import startServer
 from multiprocessing import Process
-
-# Define the port for the mock server
-port = 62444
+try:
+    from utils.mock_qpu.ionq import startServer
+except:
+    print("Mock qpu not available, skipping IonQ tests.")
+    # TODO: Once we remove the general skip below, it should go here.
 
 pytest.skip(
     "This file produces a segmentation fault on the CI but not locally. See https://github.com/NVIDIA/cuda-quantum/issues/303.",
     allow_module_level=True)
+
+# Define the port for the mock server
+port = 62455
+
 
 def assert_close(want, got, tolerance=1.0e-5) -> bool:
     return abs(want - got) < tolerance
@@ -56,9 +62,7 @@ def test_ionq_sample():
     qubits = kernel.qalloc(2)
     kernel.h(qubits[0])
     kernel.cx(qubits[0], qubits[1])
-    # FIXME CANT HAVE LOOP IN IT YET...
-    kernel.mz(qubits[0])
-    kernel.mz(qubits[1])
+    kernel.mz(qubits)
     print(kernel)
 
     # Run sample synchronously, this is fine
@@ -109,13 +113,9 @@ def test_ionq_observe():
     kernel.cx(qreg[1], qreg[0])
 
     # Define its spin Hamiltonian.
-    hamiltonian = (
-        5.907
-        - 2.1433 * spin.x(0) * spin.x(1)
-        - 2.1433 * spin.y(0) * spin.y(1)
-        + 0.21829 * spin.z(0)
-        - 6.125 * spin.z(1)
-    )
+    hamiltonian = (5.907 - 2.1433 * spin.x(0) * spin.x(1) -
+                   2.1433 * spin.y(0) * spin.y(1) + 0.21829 * spin.z(0) -
+                   6.125 * spin.z(1))
 
     # Run the observe task on IonQ synchronously
     res = cudaq.observe(kernel, hamiltonian, 0.59)

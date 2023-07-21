@@ -6,7 +6,7 @@
 # the terms of the Apache License 2.0 which accompanies this distribution.     #
 # ============================================================================ #
 
-cmake_minimum_required(VERSION 3.18 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.22 FATAL_ERROR)
 
 # Policies
 # ==============================================================================
@@ -105,16 +105,45 @@ endif()
 option(CUDAQ_BUILD_TESTS "Build cudaq tests" ON)
 option(CUDAQ_ENABLE_RPC_LOGGING "Enable verbose printout for client/server qpud connection." OFF)
 option(CUDAQ_BUILD_RELOCATABLE_PACKAGE "Make CUDA Quantum install tree relocatable, system headers included." OFF)
+option(CUDAQ_BUILD_SELFCONTAINED "Statically link all dependencies and create a relocatable installation folder." OFF)
 option(CUDAQ_TEST_MOCK_SERVERS "Enable Remote QPU Tests via Mock Servers." OFF)
 option(CUDAQ_DISABLE_RUNTIME "Build without the CUDA Quantum runtime, just the compiler toolchain." OFF)
 option(CUDAQ_SKIP_MPI "Do not build with MPI, even when it is available." OFF)
 option(CUDAQ_DISABLE_CPP_FRONTEND "Build without the CUDA Quantum C++ Clang-based Frontend." OFF)
 OPTION(CUDAQ_ENABLE_CC "Enable code coverage flags, must build with debug mode" OFF)
 
-if (CUDAQ_BUILD_RELOCATABLE_PACKAGE) 
-  if (CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
-    message(FATAL_ERROR "You must provide an install prefix if you are building the relocatable package.")
-  endif()
+# We allow to pick up certain build configurations directly from the environment,
+# since this facilitates some of the packaging (e.g. python packages built based on the pyproject.toml).
+if(NOT CUDAQ_BUILD_SELFCONTAINED)
+  SET(CUDAQ_BUILD_SELFCONTAINED $ENV{CUDAQ_BUILD_SELFCONTAINED})
+endif()
+if(NOT LLVM_DIR AND EXISTS "$ENV{LLVM_INSTALL_PREFIX}/lib/cmake/llvm")
+  SET(LLVM_DIR "$ENV{LLVM_INSTALL_PREFIX}/lib/cmake/llvm")
+endif()
+if(NOT CUSTATEVEC_ROOT)
+  SET(CUSTATEVEC_ROOT "$ENV{CUQUANTUM_INSTALL_PREFIX}")
+endif()
+if(NOT OPENSSL_ROOT_DIR)	
+  SET(OPENSSL_ROOT_DIR "$ENV{OPENSSL_INSTALL_PREFIX}")	
+endif()
+
+SET(CMAKE_SKIP_BUILD_RPATH FALSE)
+SET(CMAKE_SKIP_INSTALL_RPATH FALSE)
+SET(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
+SET(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
+SET(CMAKE_INSTALL_RPATH "$ORIGIN:$ORIGIN/lib:$ORIGIN/lib/plugins:$ORIGIN/../lib:$ORIGIN/../lib/plugins")
+
+SET(BLA_STATIC ON)
+if(NOT DEFINED OPENSSL_USE_STATIC_LIBS)
+  SET(OPENSSL_USE_STATIC_LIBS TRUE)
+endif()
+
+if (CUDAQ_BUILD_SELFCONTAINED)
+  # Using -static-libgcc -static-libstdc++ offers finer control here if needed.
+  # At the time of writing, there wasn't any benefit to using those over -static.
+  SET(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static")
+  SET(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -static")
+  SET(CUDAQ_BUILD_RELOCATABLE_PACKAGE TRUE)
 endif()
 
 include(ExternalProject)
@@ -207,7 +236,11 @@ if(NOT Clang_DIR)
   set(Clang_DIR ${LLVM_BINARY_DIR}/lib/cmake/clang)
 endif()
 
-find_package(Clang REQUIRED CONFIG)
+find_package(Clang CONFIG)
+if (NOT Clang_FOUND) 
+  message(STATUS "Clang not found, turning off C++ Frontend.")
+  set (CUDAQ_DISABLE_CPP_FRONTEND ON)
+endif()
 
 message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
 message(STATUS "Using ClangConfig.cmake in: ${Clang_DIR}")
@@ -221,7 +254,6 @@ list(APPEND CMAKE_MODULE_PATH "${MLIR_CMAKE_DIR}")
 list(APPEND CMAKE_MODULE_PATH "${LLVM_CMAKE_DIR}")
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake/Modules")
 
-include(CUDAQRPath)
 include(TableGen)
 include(AddLLVM)
 include(AddMLIR)
@@ -291,9 +323,9 @@ else()
     foreach(dir ${CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES})
       if (${dir} MATCHES ".*/c.*/v1") 
         # Copy the bundled c++ includes from theClang install to ours
-        file(COPY ${dir} DESTINATION ${CMAKE_INSTALL_PREFIX}/include/c++/)
+        file(COPY ${dir} DESTINATION include/c++/)
         # We want the driver to include the bundled C++ headers from Clang
-        set(CUDAQ_CXX_NVQPP_INCLUDE_STR "${CUDAQ_CXX_NVQPP_INCLUDE_STR} -I ${CMAKE_INSTALL_PREFIX}/include/c++/v1")
+        set(CUDAQ_CXX_NVQPP_INCLUDE_STR "${CUDAQ_CXX_NVQPP_INCLUDE_STR} -I include/c++/v1")
       elseif(${dir} MATCHES ".*sdk/usr/include") 
         # We want the driver to include the SDK/usr/include dir
         set(CUDAQ_CXX_NVQPP_INCLUDE_STR "${CUDAQ_CXX_NVQPP_INCLUDE_STR} -I ${dir}")
@@ -339,6 +371,13 @@ if(CMAKE_CUDA_COMPILER)
   message(STATUS "Cuda language found. Will build NVIDIA Platform.")
 endif()
 
+# Check for OpenSSL
+find_package(OpenSSL)
+
+# Check for CURL and OpenSSL
+find_package(CURL COMPONENTS HTTP HTTPS QUIET) 
+find_package(OpenSSL QUIET)
+
 # Code coverage setup
 # ==============================================================================
 # if(CUDAQ_ENABLE_CC)
@@ -348,10 +387,6 @@ else()
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fprofile-instr-generate -fcoverage-mapping")
 endif()
 # endif(CUDAQ_ENABLE_CC)
-
-# Check for CURL and OpenSSL
-find_package(CURL COMPONENTS HTTP HTTPS QUIET) 
-find_package(OpenSSL QUIET)
 
 # Optionally build with MPI
 if (NOT CUDAQ_SKIP_MPI)
@@ -373,10 +408,9 @@ add_subdirectory(lib)
 if (NOT CUDAQ_DISABLE_RUNTIME)
   add_subdirectory(runtime)
 endif()
-if (NOT CUDAQ_DISABLE_CPP_FRONTEND)
+if (NOT CUDAQ_DISABLE_TOOLS)
   add_subdirectory(tools)
 endif()
-
 add_subdirectory(utils)
 
 # Python setup
@@ -409,9 +443,9 @@ if (CUDAQ_ENABLE_PYTHON)
   add_subdirectory(python)
 endif()
 
-if (CUDAQ_BUILD_RELOCATABLE_PACKAGE) 
+if (CUDAQ_BUILD_RELOCATABLE_PACKAGE AND NOT CUDAQ_DISABLE_CPP_FRONTEND) 
   # Grab the Clang system headers / resource-dir
-  install(DIRECTORY ${LLVM_BINARY_DIR}/lib/clang/ DESTINATION ${CMAKE_INSTALL_PREFIX}/lib/clang)
+  install(DIRECTORY ${LLVM_BINARY_DIR}/lib/clang/ DESTINATION lib/clang)
 
   # Install the executables we need
   install(PROGRAMS ${LLVM_BINARY_DIR}/bin/llc DESTINATION bin)

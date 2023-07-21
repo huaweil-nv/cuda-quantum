@@ -5,17 +5,16 @@
 # This source code and the accompanying materials are made available under     #
 # the terms of the Apache License 2.0 which accompanies this distribution.     #
 # ============================================================================ #
-import os
-import sys
-import time
 
-import pytest
-from multiprocessing import Process
 
-import cudaq
+import cudaq, pytest, os, time
 from cudaq import spin
-
-from utils.mock_qpu.quantinuum import startServer
+from multiprocessing import Process
+try:
+    from utils.mock_qpu.quantinuum import startServer
+except:
+    print("Mock qpu not available, skipping Quantinuum tests.")
+    # TODO: Once we remove the general skip below, it should go here.
 
 pytest.skip(
     "This file produces a segmentation fault on the CI but not locally. See also https://github.com/NVIDIA/cuda-quantum/issues/303.",
@@ -58,8 +57,7 @@ def test_quantinuum_sample():
     qubits = kernel.qalloc(2)
     kernel.h(qubits[0])
     kernel.cx(qubits[0], qubits[1])
-    kernel.mz(qubits[0])
-    kernel.mz(qubits[1])
+    kernel.mz(qubits)
     print(kernel)
 
     # Run sample synchronously, this is fine

@@ -121,27 +121,28 @@ void optimizeLLVM(llvm::Module *module) {
 void registerToQIRTranslation() {
   cudaq::TranslateFromMLIRRegistration reg(
       "qir", "translate from quake to qir adaptive",
-      [](Operation *op, raw_ostream &output) {
+      [](Operation *op, llvm::raw_string_ostream &output, bool printIR) {
         auto context = op->getContext();
         PassManager pm(context);
         std::string errMsg;
         llvm::raw_string_ostream errOs(errMsg);
-        std::string qirBasePipelineConfig = "quake-to-qir,qir-to-base-qir-prep,"
-                                            "llvm.func(quake-to-base-qir-func),"
-                                            "qir-to-base-qir";
+        auto qirBasePipelineConfig =
+            "promote-qubit-allocation,quake-to-qir,base-profile-pipeline";
         if (failed(parsePassPipeline(qirBasePipelineConfig, pm, errOs)))
           return failure();
         if (failed(pm.run(op)))
           return failure();
 
-        std::unique_ptr<llvm::LLVMContext> llvmContext =
-            std::make_unique<llvm::LLVMContext>();
+        auto llvmContext = std::make_unique<llvm::LLVMContext>();
         llvmContext->setOpaquePointers(false);
         auto llvmModule = translateModuleToLLVMIR(op, *llvmContext);
         cudaq::optimizeLLVM(llvmModule.get());
         if (!cudaq::setupTargetTriple(llvmModule.get()))
           throw std::runtime_error(
               "Failed to setup the llvm module target triple.");
+
+        if (printIR)
+          llvm::errs() << *llvmModule;
 
         // Map the LLVM Module to Bitcode that can be submitted
         llvm::SmallString<1024> bitCodeMem;
@@ -155,19 +156,25 @@ void registerToQIRTranslation() {
 void registerToOpenQASMTranslation() {
   cudaq::TranslateFromMLIRRegistration reg(
       "qasm2", "translate from quake to openQASM 2.0",
-      [](Operation *op, raw_ostream &output) {
+      [](Operation *op, llvm::raw_string_ostream &output, bool printIR) {
         PassManager pm(op->getContext());
         if (failed(pm.run(op)))
           throw std::runtime_error("Lowering failed.");
-        return cudaq::translateToOpenQASM(op, output);
+        auto passed = cudaq::translateToOpenQASM(op, output);
+        if (printIR)
+          llvm::errs() << output.str();
+        return passed;
       });
 }
 
 void registerToIQMJsonTranslation() {
   cudaq::TranslateFromMLIRRegistration reg(
       "iqm", "translate from quake to IQM's json format",
-      [](Operation *op, raw_ostream &output) {
-        return cudaq::translateToIQMJson(op, output);
+      [](Operation *op, llvm::raw_string_ostream &output, bool printIR) {
+        auto passed = cudaq::translateToIQMJson(op, output);
+        if (printIR)
+          llvm::errs() << output.str();
+        return passed;
       });
 }
 
@@ -182,6 +189,7 @@ std::unique_ptr<MLIRContext> initializeMLIR() {
     registerToOpenQASMTranslation();
     registerToIQMJsonTranslation();
     cudaq::opt::registerUnrollingPipeline();
+    cudaq::opt::registerBaseProfilePipeline();
     cudaq::opt::registerTargetPipelines();
     mlirLLVMInitialized = true;
   }
@@ -210,11 +218,12 @@ ExecutionEngine *createQIRJITEngine(ModuleOp &moduleOp) {
     std::string errMsg;
     llvm::raw_string_ostream errOs(errMsg);
     pm.addNestedPass<func::FuncOp>(cudaq::opt::createQuakeAddDeallocs());
+    pm.addPass(createCanonicalizerPass());
+    pm.addPass(cudaq::opt::createPromoteRefToVeqAlloc());
     pm.addPass(cudaq::opt::createConvertToQIRPass());
     if (failed(pm.run(module)))
       throw std::runtime_error(
           "[createQIRJITEngine] Lowering to QIR for remote emulation failed.");
-
     auto llvmModule = translateModuleToLLVMIR(module, llvmContext);
     if (!llvmModule)
       throw std::runtime_error(

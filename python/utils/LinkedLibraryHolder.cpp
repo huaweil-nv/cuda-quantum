@@ -24,6 +24,11 @@ void __nvqir__setCircuitSimulator(nvqir::CircuitSimulator *);
 }
 
 namespace cudaq {
+
+/// @brief Keep an eye out for requests to ignore
+/// target modification.
+extern bool disallowTargetModification;
+
 void setQuantumPlatformInternal(quantum_platform *p);
 
 constexpr static const char PLATFORM_LIBRARY[] = "PLATFORM_LIBRARY=";
@@ -132,7 +137,6 @@ LinkedLibraryHolder::LinkedLibraryHolder() {
                        dlopen(p.string().c_str(), RTLD_GLOBAL | RTLD_NOW));
 
   // We will always load the RemoteRestQPU plugin in Python.
-  // It will be built when CURL and OpenSSL are present.
   auto potentialPath =
       cudaqLibPath / fmt::format("libcudaq-rest-qpu.{}", libSuffix);
   void *restQpuLibHandle =
@@ -185,12 +189,16 @@ LinkedLibraryHolder::LinkedLibraryHolder() {
     }
   }
 
-  // We'll always start off with the default platform and the QPP simulator
-  __nvqir__setCircuitSimulator(getSimulator("qpp"));
-  setQuantumPlatformInternal(getPlatform("default"));
   targets.emplace("default",
                   RuntimeTarget{"default", "qpp", "default",
                                 "Default OpenMP CPU-only simulated QPU."});
+
+  if (cudaq::disallowTargetModification)
+    return;
+
+  // We'll always start off with the default platform and the QPP simulator
+  __nvqir__setCircuitSimulator(getSimulator("qpp"));
+  setQuantumPlatformInternal(getPlatform("default"));
 }
 
 LinkedLibraryHolder::~LinkedLibraryHolder() {
@@ -253,6 +261,10 @@ bool LinkedLibraryHolder::hasTarget(const std::string &name) {
 void LinkedLibraryHolder::setTarget(
     const std::string &targetName,
     std::map<std::string, std::string> extraConfig) {
+  // Do not set the default target if the disallow
+  // flag has been set.
+  if (cudaq::disallowTargetModification)
+    return;
 
   auto iter = targets.find(targetName);
   if (iter == targets.end())
@@ -337,11 +349,16 @@ void bindRuntimeTarget(py::module &mod, LinkedLibraryHolder &holder) {
       [&](const cudaq::RuntimeTarget &target, py::kwargs extraConfig) {
         std::map<std::string, std::string> config;
         for (auto &[key, value] : extraConfig) {
-          if (!py::isinstance<py::str>(value))
+          std::string strValue = "";
+          if (py::isinstance<py::bool_>(value))
+            strValue = value.cast<py::bool_>() ? "true" : "false";
+          else if (py::isinstance<py::str>(value))
+            strValue = value.cast<std::string>();
+          else
             throw std::runtime_error(
-                "QPU kwargs config value must be a string.");
+                "QPU kwargs config value must be cast-able to a string.");
 
-          config.emplace(key.cast<std::string>(), value.cast<std::string>());
+          config.emplace(key.cast<std::string>(), strValue);
         }
         holder.setTarget(target.name, config);
       },
@@ -353,11 +370,16 @@ void bindRuntimeTarget(py::module &mod, LinkedLibraryHolder &holder) {
       [&](const std::string &name, py::kwargs extraConfig) {
         std::map<std::string, std::string> config;
         for (auto &[key, value] : extraConfig) {
-          if (!py::isinstance<py::str>(value))
+          std::string strValue = "";
+          if (py::isinstance<py::bool_>(value))
+            strValue = value.cast<py::bool_>() ? "true" : "false";
+          else if (py::isinstance<py::str>(value))
+            strValue = value.cast<std::string>();
+          else
             throw std::runtime_error(
-                "QPU kwargs config value must be a string.");
+                "QPU kwargs config value must be cast-able to a string.");
 
-          config.emplace(key.cast<std::string>(), value.cast<std::string>());
+          config.emplace(key.cast<std::string>(), strValue);
         }
         holder.setTarget(name, config);
       },

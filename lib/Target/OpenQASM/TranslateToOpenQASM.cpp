@@ -26,7 +26,7 @@ static LogicalResult translateOperatorName(quake::OperatorInterface optor,
                                            StringRef &name) {
   StringRef qkeName = optor->getName().stripDialect();
   if (optor.getControls().size() == 0) {
-    name = StringSwitch<StringRef>(qkeName).Case("r1", "cu1").Default(qkeName);
+    name = StringSwitch<StringRef>(qkeName).Case("r1", "u1").Default(qkeName);
   } else if (optor.getControls().size() == 1) {
     name = StringSwitch<StringRef>(qkeName)
                .Case("h", "ch")
@@ -160,6 +160,9 @@ static LogicalResult emitOperation(Emitter &emitter, quake::ApplyOp op) {
 }
 
 static LogicalResult emitOperation(Emitter &emitter, func::FuncOp op) {
+  if (op.isPrivate())
+    return success();
+
   // In Quake's reference semantics form, kernels only return classical types.
   // Thus, we check whether the numbers of results is zero or not.
   if (op.getNumResults() > 0)
