@@ -4,5 +4,9 @@ coverage:
       default:
         target: 50%
         threshold: 1%
+ignore:
+   - "build"
+   - "tpl"
+   - "python"
 fixes:
-   - "/workspaces/::"
+   - "/workspaces/cuda-quantum::"
