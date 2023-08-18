@@ -358,6 +358,7 @@ public:
   /// @brief Return a sparse matrix representation of this `spin_op`. The
   /// return type encodes all non-zero `(row, col, value)` elements.
   csr_spmatrix to_sparse_matrix() const;
+  void test_codecov(int val) const;
 };
 
 /// @brief Add a double and a spin_op
