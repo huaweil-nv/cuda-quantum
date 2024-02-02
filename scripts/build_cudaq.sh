@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ============================================================================ #
-# Copyright (c) 2022 - 2023 NVIDIA Corporation & Affiliates.                   #
+# Copyright (c) 2022 - 2024 NVIDIA Corporation & Affiliates.                   #
 # All rights reserved.                                                         #
 #                                                                              #
 # This source code and the accompanying materials are made available under     #
@@ -150,7 +150,7 @@ if $verbose; then
   ninja install || fail_gracefully
 else
   echo "The progress of the build is being logged to $logs_dir/ninja_output.txt."
-  ninja install 2> "$logs_dir/ninja_error.txt" 1> "$logs_dir/ninja_output.txt" || fail_gracefully
+  ninja -v install 2> "$logs_dir/ninja_error.txt" 1> "$logs_dir/ninja_output.txt" || fail_gracefully
 fi
 
 cp "$repo_root/LICENSE" "$CUDAQ_INSTALL_PREFIX/LICENSE"

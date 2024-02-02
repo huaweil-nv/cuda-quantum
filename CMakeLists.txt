@@ -1,5 +1,5 @@
 # ============================================================================ #
-# Copyright (c) 2022 - 2023 NVIDIA Corporation & Affiliates.                   #
+# Copyright (c) 2022 - 2024 NVIDIA Corporation & Affiliates.                   #
 # All rights reserved.                                                         #
 #                                                                              #
 # This source code and the accompanying materials are made available under     #
@@ -128,6 +128,8 @@ option(CUDAQ_TEST_MOCK_SERVERS "Enable Remote QPU Tests via Mock Servers." OFF)
 option(CUDAQ_DISABLE_RUNTIME "Build without the CUDA Quantum runtime, just the compiler toolchain." OFF)
 option(CUDAQ_SKIP_MPI "Do not build with MPI, even when it is available." OFF)
 option(CUDAQ_DISABLE_CPP_FRONTEND "Build without the CUDA Quantum C++ Clang-based Frontend." OFF)
+option(CUDAQ_ENABLE_ADDRESS_SANITIZER_TEST "Enable address dynamic analysis tools for CUDA Quantum." OFF)
+option(CUDAQ_ENABLE_THREAD_SANITIZER_TEST "Enable thread dynamic analysis tools for CUDA Quantum." OFF)
 
 # Certain build configurations may be set directly in the environment.
 # This facilitates some of the packaging (e.g. python packages built based on the pyproject.toml).
@@ -161,6 +163,12 @@ if(NOT CURL_LIBRARY AND EXISTS "$ENV{CURL_INSTALL_PREFIX}/lib/libcurl.a")
 endif()
 if(NOT CUDAQ_EXTERNAL_NVQIR_SIMS)
   SET(CUDAQ_EXTERNAL_NVQIR_SIMS $ENV{CUDAQ_EXTERNAL_NVQIR_SIMS})
+endif()
+if (NOT CUDAQ_ENABLE_ADDRESS_SANITIZER_TEST)
+  SET(CUDAQ_ENABLE_ADDRESS_SANITIZER_TEST $ENV{CUDAQ_ENABLE_ADDRESS_SANITIZER_TEST})
+endif()
+if (NOT CUDAQ_ENABLE_THREAD_SANITIZER_TEST)
+  SET(CUDAQ_ENABLE_THREAD_SANITIZER_TEST $ENV{CUDAQ_ENABLE_THREAD_SANITIZER_TEST})
 endif()
 
 SET(CMAKE_SKIP_BUILD_RPATH FALSE)
@@ -415,6 +423,29 @@ if (NOT CUDAQ_SKIP_MPI)
     message(STATUS "MPI CXX Found: ${MPIEXEC}")
     # Build the built-in MPI Comm plugin
     add_subdirectory(runtime/cudaq/distributed/builtin)
+  endif()
+endif()
+
+if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+  # export LD_LIBRARY_PATH=/opt/llvm/lib/clang/16/lib/linux:$LD_LIBRARY_PATH
+  if (CUDAQ_ENABLE_ADDRESS_SANITIZER_TEST)
+    # libnvqir-custatevec-fp*.so link by /usr/bin/g++?
+    SET(CUSTATEVEC_ROOT "")
+    add_compile_options(-fsanitize=address -fno-omit-frame-pointer)
+    add_link_options(-fuse-ld=lld -fsanitize=address -fno-omit-frame-pointer -shared-libasan)
+  elseif(CUDAQ_ENABLE_THREAD_SANITIZER_TEST)
+    SET(CUSTATEVEC_ROOT "")
+    add_compile_options(-fsanitize=thread)
+    add_link_options(-fuse-ld=lld -fsanitize=thread -shared-libasan)
+  endif()
+elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+  # need to set warning to error disable
+  if (CUDAQ_ENABLE_ADDRESS_SANITIZER_TEST)
+    add_compile_options(-fsanitize=address -fno-omit-frame-pointer)
+    add_link_options(-fsanitize=address -fno-omit-frame-pointer)
+  elseif(CUDAQ_ENABLE_THREAD_SANITIZER_TEST)
+    add_compile_options(-fsanitize=thread)
+    add_link_options(-fsanitize=thread)
   endif()
 endif()
 

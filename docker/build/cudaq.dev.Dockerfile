@@ -1,5 +1,5 @@
 # ============================================================================ #
-# Copyright (c) 2022 - 2023 NVIDIA Corporation & Affiliates.                   #
+# Copyright (c) 2022 - 2024 NVIDIA Corporation & Affiliates.                   #
 # All rights reserved.                                                         #
 #                                                                              #
 # This source code and the accompanying materials are made available under     #
@@ -17,7 +17,8 @@
 # 3) set the CC and CXX environment variable to use the same compiler toolchain
 #    as the LLVM dependencies have been built with.
 
-ARG base_image=ghcr.io/nvidia/cuda-quantum-devdeps:ext-gcc12-main
+# ARG base_image=gitlab-master.nvidia.com:5005/bhowe/cuda-quantum:dev-ext-amd64-llvm-pr-1161
+ARG base_image=ghcr.io/nvidia/cuda-quantum-dev:ext-amd64-gcc12-pr-1161
 FROM $base_image
 
 ENV CUDAQ_REPO_ROOT=/workspaces/cuda-quantum
