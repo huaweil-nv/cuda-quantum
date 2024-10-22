@@ -88,3 +88,9 @@ Returns:
     cudaq_runtime.resetExecutionContext()
     cudaq_runtime.unset_noise()
     return res
+
+def code_cov(value):
+  if value > 1:
+    print("tested")
+  else:
+    print("untested")

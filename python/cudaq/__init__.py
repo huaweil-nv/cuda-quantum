@@ -44,6 +44,7 @@ from .kernel.kernel_decorator import kernel, PyKernelDecorator
 from .kernel.kernel_builder import make_kernel, QuakeValue, PyKernel
 from .kernel.ast_bridge import globalAstRegistry, globalKernelRegistry, globalRegisteredOperations
 from .runtime.sample import sample
+from .runtime.sample import code_cov
 from .runtime.observe import observe
 from .runtime.state import to_cupy
 from .kernel.register_op import register_operation

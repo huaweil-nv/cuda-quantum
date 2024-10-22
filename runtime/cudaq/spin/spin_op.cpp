@@ -598,6 +598,17 @@ void spin_op::dump() const {
   std::cout << str;
 }
 
+void spin_op::test_codecov(int val) const {
+    if (val > 0)
+    {
+      std::cout << "Tested" << std::endl;
+    }
+    else
+    {
+      std::cout << "Untested" << std::endl;
+    }
+}
+
 spin_op::spin_op(const std::vector<double> &input_vec, std::size_t nQubits) {
   auto n_terms = (int)input_vec.back();
   if (nQubits != (((input_vec.size() - 1) - 2 * n_terms) / n_terms))

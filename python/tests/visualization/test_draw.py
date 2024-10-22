@@ -131,6 +131,8 @@ q2 : ┤ h ├┤ x ├┤ tdg ├┤ x ├┤ t ├┤ x ├┤ tdg ├┤ x �
     assert expected_str == produced_string
     cudaq.reset_target()
 
+def test_code_cov():
+    cudaq.code_cov(2)
 
 # leave for gdb debugging
 if __name__ == "__main__":
