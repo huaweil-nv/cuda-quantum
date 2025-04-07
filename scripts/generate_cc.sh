@@ -67,10 +67,12 @@ if $gen_cpp_coverage; then
     export CUDAQ_ENABLE_CC=ON
     mkdir -p /usr/lib/llvm-16/lib/clang/16/lib/linux
     ln -s /usr/local/llvm/lib/clang/16/lib/x86_64-unknown-linux-gnu/libclang_rt.profile.a /usr/lib/llvm-16/lib/clang/16/lib/linux/libclang_rt.profile-x86_64.a
-    export LLVM_PROFILE_FILE=${repo_root}/build/tmp/cudaq-cc/profile-%9m.profraw
+    # export LLVM_PROFILE_FILE=${repo_root}/build/tmp/cudaq-cc/profile-%9m.profraw
 fi
 
 # Build project
+# debug
+export LLVM_PROFILE_FILE=${repo_root}/build/tmp/cudaq-cc/profile-build-%9m.profraw
 bash ${repo_root}/scripts/build_cudaq.sh
 if [ $? -ne 0 ]; then
     echo "Build cudaq failure: $?" >&2
@@ -94,8 +96,12 @@ if $gen_cpp_coverage; then
 
     # Run tests (C++ Unittests)
     python3 -m pip install iqm-client==28.0.0
+    # debug
+    export LLVM_PROFILE_FILE=${repo_root}/build/tmp/cudaq-cc/profile-ctest-%9m.profraw
     ctest --output-on-failure --test-dir ${repo_root}/build -E ctest-nvqpp -E ctest-targettests
     ctest_status=$?
+    # debug
+    export LLVM_PROFILE_FILE=${repo_root}/build/tmp/cudaq-cc/profile-llvmlit-%9m.profraw
     /usr/local/llvm/bin/llvm-lit -v --param nvqpp_site_config=${repo_root}/build/test/lit.site.cfg.py ${repo_root}/build/test
     lit_status=$?
     /usr/local/llvm/bin/llvm-lit -v --param nvqpp_site_config=${repo_root}/build/targettests/lit.site.cfg.py ${repo_root}/build/targettests
@@ -111,6 +117,8 @@ if $gen_cpp_coverage; then
     # Run tests (Python tests)
     rm -rf ${repo_root}/_skbuild
     pip install ${repo_root} --user -vvv
+    # debug
+    export LLVM_PROFILE_FILE=${repo_root}/build/tmp/cudaq-cc/profile-python-%9m.profraw
     python3 -m pytest -v ${repo_root}/python/tests/ --ignore ${repo_root}/python/tests/backends
     for backendTest in ${repo_root}/python/tests/backends/*.py; do
         python3 -m pytest -v $backendTest
@@ -178,25 +186,54 @@ if $gen_cpp_coverage; then
 fi
 
 if $gen_py_coverage; then
-    pip install pytest-cov
-    pip install iqm_client==16.1 --user -vvv
+    pip install coverage
+    pip install iqm_client==28.0.0 --user -vvv
     rm -rf ${repo_root}/_skbuild
-    pip install . --user -vvv
-    if $is_codecov_format; then
-        python3 -m pytest -v python/tests/ --ignore python/tests/backends --cov=cudaq --cov-report=xml:${repo_root}/build/pycoverage/coverage.xml --cov-append
-    else
-        python3 -m pytest -v python/tests/ --ignore python/tests/backends --cov=cudaq --cov-report=html:${repo_root}/build/pycoverage --cov-append
-    fi
+    pip install -e . --user -vvv
+
+    # normal tests
+    coverage run -a -m pytest -v python/tests/ --ignore python/tests/backends
+    # backend tests
     for backendTest in python/tests/backends/*.py; do
-        if $is_codecov_format; then
-            python3 -m pytest -v $backendTest --cov=cudaq --cov-report=xml:${repo_root}/build/pycoverage/coverage.xml --cov-append
-        else
-            python3 -m pytest -v $backendTest --cov=cudaq --cov-report=html:${repo_root}/build/pycoverage --cov-append
-        fi
+        coverage run -a -m pytest -v $backendTest
         pytest_status=$?
         if [ ! $pytest_status -eq 0 ] && [ ! $pytest_status -eq 5 ]; then
             echo "::error $backendTest tests failed with status $pytest_status."
             exit 1
         fi
     done
+    # mlir tests
+    # Iterate through all .py files in python/tests/mlir directory (including subdirectories)
+    find ${repo_root}/python/tests/mlir -name "*.py" | while read -r test_file; do
+        # Check if the file contains XFAIL marker, if so skip it
+        if grep -q "# XFAIL:" "$test_file"; then
+            echo "Skipping file with XFAIL marker: $test_file"
+            continue
+        fi
+        
+        # Check if the file contains RUN instruction
+        run_line=$(grep "# RUN:" "$test_file" | head -n 1)
+        if [ -z "$run_line" ]; then
+            echo "Skipping file without RUN instruction: $test_file"
+            continue
+        fi
+        
+        # Determine how to run the test based on RUN instruction
+        if [[ "$run_line" == *"python"* ]]; then
+            echo "Running test with python: $test_file"
+            coverage run -a "$test_file"
+        elif [[ "$run_line" == *"pytest"* ]]; then
+            echo "Running test with pytest: $test_file"
+            coverage run -a -m pytest "$test_file"
+        else
+            echo "RUN instruction format unclear, skipping: $test_file"
+        fi
+    done
+
+    # generate report
+    if $is_codecov_format; then
+        coverage xml -o ${repo_root}/build/pycoverage/coverage.xml --omit=${repo_root}/python/tests/*,/usr/lib/*
+    else
+        coverage html -d ${repo_root}/build/pycoverage --omit=${repo_root}/python/tests/*,/usr/lib/*
+    fi
 fi
