@@ -178,25 +178,54 @@ if $gen_cpp_coverage; then
 fi
 
 if $gen_py_coverage; then
-    pip install pytest-cov
+    pip install coverage
     pip install iqm_client==16.1 --user -vvv
     rm -rf ${repo_root}/_skbuild
-    pip install . --user -vvv
-    if $is_codecov_format; then
-        python3 -m pytest -v python/tests/ --ignore python/tests/backends --cov=cudaq --cov-report=xml:${repo_root}/build/pycoverage/coverage.xml --cov-append
-    else
-        python3 -m pytest -v python/tests/ --ignore python/tests/backends --cov=cudaq --cov-report=html:${repo_root}/build/pycoverage --cov-append
-    fi
+    pip install -e . --user -vvv
+
+    # normal tests
+    coverage run -a -m pytest -v python/tests/ --ignore python/tests/backends
+    # backend tests
     for backendTest in python/tests/backends/*.py; do
-        if $is_codecov_format; then
-            python3 -m pytest -v $backendTest --cov=cudaq --cov-report=xml:${repo_root}/build/pycoverage/coverage.xml --cov-append
-        else
-            python3 -m pytest -v $backendTest --cov=cudaq --cov-report=html:${repo_root}/build/pycoverage --cov-append
-        fi
+        coverage run -a -m pytest -v $backendTest
         pytest_status=$?
         if [ ! $pytest_status -eq 0 ] && [ ! $pytest_status -eq 5 ]; then
             echo "::error $backendTest tests failed with status $pytest_status."
             exit 1
         fi
     done
+    # mlir tests
+    # Iterate through all .py files in python/tests/mlir directory (including subdirectories)
+    find ${repo_root}/python/tests/mlir -name "*.py" | while read -r test_file; do
+        # Check if the file contains XFAIL marker, if so skip it
+        if grep -q "# XFAIL:" "$test_file"; then
+            echo "Skipping file with XFAIL marker: $test_file"
+            continue
+        fi
+        
+        # Check if the file contains RUN instruction
+        run_line=$(grep "# RUN:" "$test_file" | head -n 1)
+        if [ -z "$run_line" ]; then
+            echo "Skipping file without RUN instruction: $test_file"
+            continue
+        fi
+        
+        # Determine how to run the test based on RUN instruction
+        if [[ "$run_line" == *"python"* ]]; then
+            echo "Running test with python: $test_file"
+            coverage run -a "$test_file"
+        elif [[ "$run_line" == *"pytest"* ]]; then
+            echo "Running test with pytest: $test_file"
+            coverage run -a -m pytest "$test_file"
+        else
+            echo "RUN instruction format unclear, skipping: $test_file"
+        fi
+    done
+
+    # generate report
+    if $is_codecov_format; then
+        coverage xml -o ${repo_root}/build/pycoverage/coverage.xml
+    else
+        coverage html -d ${repo_root}/build/pycoverage
+    fi
 fi
