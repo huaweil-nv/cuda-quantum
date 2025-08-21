@@ -73,7 +73,7 @@ fi
 # Build project
 # debug
 export LLVM_PROFILE_FILE=${repo_root}/build/tmp/cudaq-cc/profile-build-%9m.profraw
-bash ${repo_root}/scripts/build_cudaq.sh
+CUDAQ_WERROR=OFF bash ${repo_root}/scripts/build_cudaq.sh
 if [ $? -ne 0 ]; then
     echo "Build cudaq failure: $?" >&2
     exit 1
