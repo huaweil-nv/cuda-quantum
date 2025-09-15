@@ -110,6 +110,7 @@ if $gen_cpp_coverage; then
     fi
     # Run the activation script
     cd ${repo_root}/runtime/cudaq/distributed/builtin/
+    cp ../distributed_capi.h .
     bash activate_custom_mpi.sh
     external_plugin_build_status=$?
     cd -
