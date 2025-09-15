@@ -100,6 +100,34 @@ if $gen_cpp_coverage; then
     export LLVM_PROFILE_FILE=${repo_root}/build/tmp/cudaq-cc/profile-ctest-%9m.profraw
     ctest --output-on-failure --test-dir ${repo_root}/build -E ctest-nvqpp
     ctest_status=$?
+    # mpi tests
+    # Set MPI_PATH depending on OMPI/MPICH
+    has_ompiinfo=$(which ompi_info || true)
+    if [[ ! -z $has_ompiinfo ]]; then
+      export MPI_PATH="/usr/lib/$(uname -m)-linux-gnu/openmpi/"
+    else
+      export MPI_PATH="/usr/lib/$(uname -m)-linux-gnu/mpich/"
+    fi
+    # Run the activation script
+    cd ${repo_root}/distributed/builtin/
+    bash activate_custom_mpi.sh
+    external_plugin_build_status=$?
+    cd -
+    export CUDAQ_MPI_COMM_LIB=${repo_root}/distributed/builtin/libcudaq_distributed_interface_mpi.so
+    if [ ! $external_plugin_build_status -eq 0 ] ; then
+      echo "Test CUDA Quantum MPI Plugin Activation failed to activate the plugin with status $external_plugin_build_status."
+    #   exit 1
+    fi
+    echo $CUDAQ_MPI_COMM_LIB
+    # Rerun the MPI plugin test
+    cd ${repo_root}
+    ctest --test-dir build -R MPIApiTest -V
+    external_plugin_status=$?   
+    if [ ! $external_plugin_status -eq 0 ] ; then
+      echo "Test CUDA Quantum MPI Plugin Activation failed with status $external_plugin_status."
+    #   exit 1
+    fi
+
     # debug
     export LLVM_PROFILE_FILE=${repo_root}/build/tmp/cudaq-cc/profile-llvmlit-%9m.profraw
     /usr/local/llvm/bin/llvm-lit -v --param nvqpp_site_config=${repo_root}/build/test/lit.site.cfg.py ${repo_root}/build/test
