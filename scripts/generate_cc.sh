@@ -109,11 +109,11 @@ if $gen_cpp_coverage; then
       export MPI_PATH="/usr/lib/$(uname -m)-linux-gnu/mpich/"
     fi
     # Run the activation script
-    cd ${repo_root}/distributed/builtin/
+    cd ${repo_root}/runtime/cudaq/distributed/builtin/
     bash activate_custom_mpi.sh
     external_plugin_build_status=$?
     cd -
-    export CUDAQ_MPI_COMM_LIB=${repo_root}/distributed/builtin/libcudaq_distributed_interface_mpi.so
+    export CUDAQ_MPI_COMM_LIB=${repo_root}/runtime/cudaq/distributed/builtin/libcudaq_distributed_interface_mpi.so
     if [ ! $external_plugin_build_status -eq 0 ] ; then
       echo "Test CUDA Quantum MPI Plugin Activation failed to activate the plugin with status $external_plugin_build_status."
     #   exit 1
