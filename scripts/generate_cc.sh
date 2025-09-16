@@ -102,12 +102,13 @@ if $gen_cpp_coverage; then
     ctest_status=$?
     # mpi tests
     # Set MPI_PATH depending on OMPI/MPICH
-    has_ompiinfo=$(which ompi_info || true)
-    if [[ ! -z $has_ompiinfo ]]; then
-      export MPI_PATH="/usr/lib/$(uname -m)-linux-gnu/openmpi/"
-    else
-      export MPI_PATH="/usr/lib/$(uname -m)-linux-gnu/mpich/"
-    fi
+    # has_ompiinfo=$(which ompi_info || true)
+    # if [[ ! -z $has_ompiinfo ]]; then
+    #   export MPI_PATH="/usr/lib/$(uname -m)-linux-gnu/openmpi/"
+    # else
+    #   export MPI_PATH="/usr/lib/$(uname -m)-linux-gnu/mpich/"
+    # fi
+    MPI_PATH=/usr/local/openmpi
     # Run the activation script
     cd ${repo_root}/runtime/cudaq/distributed/builtin/
     cp ../distributed_capi.h .
