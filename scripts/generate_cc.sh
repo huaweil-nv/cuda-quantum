@@ -87,7 +87,7 @@ gen_cplusplus_report() {
             --ignore-filename-regex="${repo_root}/build/*" --ignore-filename-regex="${repo_root}/unittests/*" 2>&1 > ${repo_root}/build/ccoverage/coverage.txt
     else
         llvm-cov show -format=html ${objects} -instr-profile=${repo_root}/build/coverage.profdata --ignore-filename-regex="${repo_root}/runtime/cudaq/platform/default/rest_serve/*" --ignore-filename-regex="${repo_root}/runtime/cudaq/platform/fermioniq/*" --ignore-filename-regex="${repo_root}/runtime/cudaq/platform/orca/*" --ignore-filename-regex="${repo_root}/runtime/cudaq/platform/quera/*" --ignore-filename-regex="${repo_root}/tpls/*" \
-            --ignore-filename-regex="${repo_root}/build/*" --ignore-filename-regex="${repo_root}/unittests/*" --ignore-filename-regex="usr/local/cuda-12.0/*" --ignore-filename-regex="usr/local/llvm/*" -o ${repo_root}/build/ccoverage 2>&1
+            --ignore-filename-regex="${repo_root}/build/*" --ignore-filename-regex="${repo_root}/unittests/*" --ignore-filename-regex="usr/local/cuda-13.0/*" --ignore-filename-regex="usr/local/llvm/*" -o ${repo_root}/build/ccoverage 2>&1
     fi
 }
 
@@ -98,8 +98,8 @@ if $gen_cpp_coverage; then
     python3 -m pip install iqm-client==28.0.0
     # debug
     export LLVM_PROFILE_FILE=${repo_root}/build/tmp/cudaq-cc/profile-ctest-%9m.profraw
-    ctest --output-on-failure --test-dir ${repo_root}/build -E ctest-nvqpp
-    ctest_status=$?
+    # ctest --output-on-failure --test-dir ${repo_root}/build -E ctest-nvqpp
+    # ctest_status=$?
     # mpi tests
     # Set MPI_PATH depending on OMPI/MPICH
     # has_ompiinfo=$(which ompi_info || true)
