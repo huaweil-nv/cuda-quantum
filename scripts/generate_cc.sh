@@ -98,8 +98,8 @@ if $gen_cpp_coverage; then
     python3 -m pip install iqm-client==28.0.0
     # debug
     export LLVM_PROFILE_FILE=${repo_root}/build/tmp/cudaq-cc/profile-ctest-%9m.profraw
-    # ctest --output-on-failure --test-dir ${repo_root}/build -E ctest-nvqpp
-    # ctest_status=$?
+    ctest --output-on-failure --test-dir ${repo_root}/build -E ctest-nvqpp
+    ctest_status=$?
     # mpi tests
     # Set MPI_PATH depending on OMPI/MPICH
     # has_ompiinfo=$(which ompi_info || true)
