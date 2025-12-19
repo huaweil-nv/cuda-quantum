@@ -508,7 +508,8 @@ TensorNetState<ScalarType>::contractStateVectorInternal(
 }
 
 template <typename ScalarType>
-std::vector<MPSTensor> TensorNetState<ScalarType>::setupMPSFactorize(
+CUDAQ_NO_COVERAGE std::vector<MPSTensor>
+TensorNetState<ScalarType>::setupMPSFactorize(
     int64_t maxExtent, double absCutoff, double relCutoff,
     cutensornetTensorSVDAlgo_t algo,
     const std::optional<cutensornetStateMPSGaugeOption_t> &gauge) {
@@ -573,7 +574,7 @@ std::vector<MPSTensor> TensorNetState<ScalarType>::setupMPSFactorize(
 }
 
 template <typename ScalarType>
-void TensorNetState<ScalarType>::computeMPSFactorize(
+CUDAQ_NO_COVERAGE void TensorNetState<ScalarType>::computeMPSFactorize(
     std::vector<MPSTensor> &mpsTensors) {
   LOG_API_TIME();
   if (mpsTensors.empty())

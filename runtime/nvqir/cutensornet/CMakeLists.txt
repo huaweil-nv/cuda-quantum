@@ -79,20 +79,6 @@ if (${CUTENSORNET_VERSION} VERSION_GREATER_EQUAL "2.9")
     target_include_directories(nvqir-${LIBRARY_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/runtime/common ${CMAKE_SOURCE_DIR}/runtime/nvqir ${CUDAToolkit_INCLUDE_DIRS} ${CUTENSORNET_INCLUDE_DIR})
     target_link_libraries(nvqir-${LIBRARY_NAME} PRIVATE fmt::fmt-header-only cudaq cudaq-common ${CUTENSORNET_LIB} ${CUTENSOR_LIB} CUDA::cudart_static)
     
-    # Disable code coverage for tensornet-mps targets to avoid LLVM compiler crashes
-    if(${LIBRARY_NAME} STREQUAL "tensornet-mps" OR ${LIBRARY_NAME} STREQUAL "tensornet-mps-fp32")
-      # Remove code coverage flags from the target
-      target_compile_options(nvqir-${LIBRARY_NAME} PRIVATE -fno-profile-instr-generate -fno-coverage-mapping)
-      # Also set target properties to override global flags
-      set_target_properties(nvqir-${LIBRARY_NAME} PROPERTIES 
-        COMPILE_FLAGS "-fno-profile-instr-generate -fno-coverage-mapping"
-        COMPILE_OPTIONS "-fno-profile-instr-generate;-fno-coverage-mapping"
-      )
-      # Remove any existing code coverage flags
-      string(REPLACE "-fprofile-instr-generate" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
-      string(REPLACE "-fcoverage-mapping" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
-    endif()
-    
     install(TARGETS nvqir-${LIBRARY_NAME} DESTINATION lib)
     if (${CREATE_TARGET_CONFIG})
       add_target_config(${LIBRARY_NAME})
