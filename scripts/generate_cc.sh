@@ -87,7 +87,10 @@ gen_cplusplus_report() {
             --ignore-filename-regex="${repo_root}/build/*" --ignore-filename-regex="${repo_root}/unittests/*" 2>&1 > ${repo_root}/build/ccoverage/coverage.txt
     else
         llvm-cov show -format=html ${objects} -instr-profile=${repo_root}/build/coverage.profdata --ignore-filename-regex="${repo_root}/runtime/cudaq/platform/default/rest_serve/*" --ignore-filename-regex="${repo_root}/runtime/cudaq/platform/fermioniq/*" --ignore-filename-regex="${repo_root}/runtime/cudaq/platform/orca/*" --ignore-filename-regex="${repo_root}/runtime/cudaq/platform/quera/*" --ignore-filename-regex="${repo_root}/tpls/*" \
-            --ignore-filename-regex="${repo_root}/build/*" --ignore-filename-regex="${repo_root}/unittests/*" --ignore-filename-regex="usr/local/cuda-13.0/*" --ignore-filename-regex="usr/local/llvm/*" -o ${repo_root}/build/ccoverage 2>&1
+            --ignore-filename-regex="${repo_root}/build/*" --ignore-filename-regex="${repo_root}/unittests/*" --ignore-filename-regex="usr/local/cuda-13.0/*" --ignore-filename-regex="usr/local/llvm/*" \
+            --ignore-filename-regex="${repo_root}/python/tests/interop/test_cpp_quantum_algorithm_module.cpp" \
+            --ignore-filename-regex="${repo_root}/runtime/test/test_argument_conversion.cpp" \
+            -o ${repo_root}/build/ccoverage 2>&1
     fi
 }
 
