@@ -90,6 +90,8 @@ gen_cplusplus_report() {
             --ignore-filename-regex="${repo_root}/build/*" --ignore-filename-regex="${repo_root}/unittests/*" --ignore-filename-regex="usr/local/cuda-13.0/*" --ignore-filename-regex="usr/local/llvm/*" \
             --ignore-filename-regex="${repo_root}/python/tests/interop/test_cpp_quantum_algorithm_module.cpp" \
             --ignore-filename-regex="${repo_root}/runtime/test/test_argument_conversion.cpp" \
+            --ignore-filename-regex="${repo_root}/runtime/cudaq/platform/default/rest/helpers/braket/*" \
+            --ignore-filename-regex="${repo_root}/runtime/common/Braket.*" \
             -o ${repo_root}/build/ccoverage 2>&1
     fi
 }
