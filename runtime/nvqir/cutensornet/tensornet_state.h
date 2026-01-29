@@ -57,8 +57,10 @@ struct AppliedTensorOp {
   std::optional<NoiseChannelData> noiseChannel;
   std::vector<int32_t> targetQubitIds;
   std::vector<int32_t> controlQubitIds;
-  bool isAdjoint;
-  bool isUnitary;
+  bool isAdjoint = false;
+  bool isUnitary = false;
+
+  /// Constructor for gate/projector operations.
   AppliedTensorOp(void *dataPtr, const std::vector<int32_t> &targetQubits,
                   const std::vector<int32_t> &controlQubits, bool adjoint,
                   bool unitary)
@@ -66,6 +68,10 @@ struct AppliedTensorOp {
         controlQubitIds(controlQubits), isAdjoint(adjoint), isUnitary(unitary) {
   }
 
+  /// Constructor for noise channel operations.
+  /// Note: isAdjoint and isUnitary use default initialization (false) and
+  /// should not be read for noise channel ops - check noiseChannel.has_value()
+  /// first.
   AppliedTensorOp(const std::vector<int32_t> &qubits,
                   const std::vector<void *> &krausOps,
                   const std::vector<double> &probabilities)
