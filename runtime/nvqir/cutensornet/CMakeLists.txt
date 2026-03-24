@@ -78,7 +78,6 @@ if (${CUTENSORNET_VERSION} VERSION_GREATER_EQUAL "2.9")
     add_library(nvqir-${LIBRARY_NAME} SHARED ${ARGN})
     target_include_directories(nvqir-${LIBRARY_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/runtime/common ${CMAKE_SOURCE_DIR}/runtime/nvqir ${CUDAToolkit_INCLUDE_DIRS} ${CUTENSORNET_INCLUDE_DIR})
     target_link_libraries(nvqir-${LIBRARY_NAME} PRIVATE fmt::fmt-header-only cudaq cudaq-common ${CUTENSORNET_LIB} ${CUTENSOR_LIB} CUDA::cudart_static)
-    
     install(TARGETS nvqir-${LIBRARY_NAME} DESTINATION lib)
     if (${CREATE_TARGET_CONFIG})
       add_target_config(${LIBRARY_NAME})

@@ -17,8 +17,7 @@
 # 3) set the CC and CXX environment variable to use the same compiler toolchain
 #    as the LLVM dependencies have been built with.
 
-
-ARG base_image=cuda-quantum-devdeps:12.6-clang16-ext
+ARG base_image=ghcr.io/nvidia/cuda-quantum-devdeps:ext-cu12.6-gcc11-main
 FROM $base_image
 
 ENV CUDAQ_REPO_ROOT=/workspaces/cuda-quantum
