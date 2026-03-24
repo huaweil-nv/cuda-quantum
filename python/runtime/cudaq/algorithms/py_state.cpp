@@ -10,8 +10,8 @@
 #include "LinkedLibraryHolder.h"
 #include "common/ArgumentWrapper.h"
 #include "common/FmtCore.h"
-#include "common/Logger.h"
 #include "cudaq/algorithms/get_state.h"
+#include "cudaq/runtime/logger/logger.h"
 #include "runtime/cudaq/platform/py_alt_launch_kernel.h"
 #include "utils/OpaqueArguments.h"
 #include "mlir/Bindings/Python/PybindAdaptors.h"
@@ -41,20 +41,20 @@ static std::vector<int> bitStringToIntVec(const std::string &bitString) {
 
 /// @brief Run `cudaq::get_state` on the provided kernel and spin operator.
 static state get_state_impl(const std::string &shortName, MlirModule mod,
-                            MlirType retTy, py::args args) {
+                            py::args args) {
   auto closure = [=]() {
-    return marshal_and_launch_module(shortName, mod, retTy, args);
+    return marshal_and_launch_module(shortName, mod, args);
   };
   return details::extractState(std::move(closure));
 }
 
-static std::future<state>
-get_state_async_impl(const std::string &shortName, MlirModule module,
-                     MlirType returnTy, std::size_t qpu_id, py::args args) {
+static std::future<state> get_state_async_impl(const std::string &shortName,
+                                               MlirModule module,
+                                               std::size_t qpu_id,
+                                               py::args args) {
   // Launch the asynchronous execution.
   auto mod = unwrap(module);
   std::string kernelName = shortName;
-  auto retTy = unwrap(returnTy);
   auto &platform = get_platform();
   auto fnOp = getKernelFuncOp(mod, shortName);
   auto opaques = marshal_arguments_for_module_launch(mod, args, fnOp);
@@ -62,18 +62,12 @@ get_state_async_impl(const std::string &shortName, MlirModule module,
   py::gil_scoped_release release;
   return details::runGetStateAsync(
       detail::make_copyable_function([opaques = std::move(opaques), kernelName,
-                                      retTy, mod = mod.clone()]() mutable {
+                                      mod = mod.clone()]() mutable {
         [[maybe_unused]] auto result =
-            clean_launch_module(kernelName, mod, retTy, opaques);
+            clean_launch_module(kernelName, mod, opaques);
       }),
       platform, qpu_id);
 }
-
-namespace {
-struct state_view : public state {
-  state_view(const state &st) : state(st) {}
-};
-} // namespace
 
 /// @brief Python implementation of the `RemoteSimulationState`.
 // Note: Python kernel arguments are wrapped hence need to be unwrapped
@@ -98,17 +92,14 @@ public:
       // Create an execution context, indicate this is for
       // extracting the state representation
       ExecutionContext context("extract-state");
-      // Perform the usual pattern set the context,
-      // execute and then reset
-      platform.set_exec_ctx(&context);
       // Note: in Python, the platform QPU (`PyRemoteSimulatorQPU`) expects an
       // ModuleOp pointer as the first element in the args array in StreamLined
       // mode.
       auto args = argsData->getArgs();
       args.insert(args.begin(),
                   const_cast<void *>(static_cast<const void *>(&kernelMod)));
-      platform.launchKernel(kernelName, args);
-      platform.reset_exec_ctx();
+      platform.with_execution_context(
+          context, [&]() { platform.launchKernel(kernelName, args); });
       state = std::move(context.simulationState);
     }
   }
@@ -121,12 +112,12 @@ public:
     context.overlapComputeStates =
         std::make_pair(static_cast<const SimulationState *>(this),
                        static_cast<const SimulationState *>(&otherState));
-    platform.set_exec_ctx(&context);
     auto args = argsData->getArgs();
     args.insert(args.begin(),
                 const_cast<void *>(static_cast<const void *>(&kernelMod)));
-    platform.launchKernel(kernelName, args);
-    platform.reset_exec_ctx();
+
+    platform.with_execution_context(
+        context, [&]() { platform.launchKernel(kernelName, args); });
     assert(context.overlapResult.has_value());
     return context.overlapResult.value();
   }
@@ -161,9 +152,11 @@ class PyQPUState : public QPUState {
   OpaqueArguments *argsData;
 
 public:
-  PyQPUState(const std::string &in_kernelName, OpaqueArguments *argsDataToOwn)
+  PyQPUState(const std::string &in_kernelName, const std::string &in_kernelCode,
+             OpaqueArguments *argsDataToOwn)
       : argsData(argsDataToOwn) {
     this->kernelName = in_kernelName;
+    this->kernelQuake = in_kernelCode;
     this->args = argsData->getArgs();
   }
 
@@ -172,19 +165,17 @@ public:
 
 /// @brief Run `cudaq::get_state` for qpu targets on the provided
 /// kernel and args
-state pyGetStateQPU(py::object kernel, py::args args) {
-  if (py::hasattr(kernel, "compile"))
-    kernel.attr("compile")();
-
-  auto kernelName = kernel.attr("uniqName").cast<std::string>();
-  auto kernelMod = kernel.attr("qkeModule").cast<MlirModule>();
+state pyGetStateQPU(const std::string &kernelName, MlirModule kernelMod,
+                    py::args args) {
+  auto moduleOp = unwrap(kernelMod);
+  std::string mlirCode;
+  llvm::raw_string_ostream outStr(mlirCode);
+  mlir::OpPrintingFlags opf;
+  opf.enableDebugInfo(/*enable=*/true, /*pretty=*/false);
+  moduleOp.print(outStr, opf);
   args = simplifiedValidateInputArguments(args);
   auto *argData = toOpaqueArgs(args, kernelMod, kernelName);
-#if 0
-  auto [argWrapper, size, returnOffset] =
-      pyCreateNativeKernel(kernelName, kernelMod, *argData);
-#endif
-  return state(new PyQPUState(kernelName, argData));
+  return state(new PyQPUState(kernelName, mlirCode, argData));
 }
 
 state pyGetStateLibraryMode(py::object kernel, py::args args) {
@@ -339,7 +330,82 @@ void cudaq::bindPyState(py::module &mod, LinkedLibraryHolder &holder) {
       .def("get_element_size", &SimulationState::Tensor::element_size)
       .def("get_num_elements", &SimulationState::Tensor::get_num_elements);
 
-  py::class_<state>(mod, "State", "FIXME: document")
+  py::class_<state>(
+      mod, "State", py::buffer_protocol(),
+      "A data-type representing the quantum state of the internal simulator. "
+      "This type is not user-constructible and instances can only be retrieved "
+      "via the `cudaq.get_state(...)` function or the static "
+      "`cudaq.State.from_data()` method.\n")
+      .def_buffer([](const state &self) {
+        if (self.get_num_tensors() != 1)
+          throw std::runtime_error("Numpy interop is only supported for vector "
+                                   "and matrix state data.");
+
+        // This method is used by Pybind to enable interoperability with NumPy
+        // array data. We therefore must be careful since the state data may
+        // actually be on GPU device.
+
+        // Get the data pointer.
+        // Data may be on GPU device, if so we must make a copy to host.
+        // If users do not want this copy, they will have to operate apart
+        // from Numpy
+        void *dataPtr = nullptr;
+        auto stateVector = self.get_tensor();
+        auto precision = self.get_precision();
+        if (self.is_on_gpu()) {
+          // This is device data, transfer to host, which gives us
+          // ownership of a new data pointer on host. Store it globally
+          // here so we ensure that it gets cleaned up.
+          auto numElements = stateVector.get_num_elements();
+          if (precision == SimulationState::precision::fp32) {
+            auto *hostData = new std::complex<float>[numElements];
+            self.to_host(hostData, numElements);
+            dataPtr = reinterpret_cast<void *>(hostData);
+          } else {
+            auto *hostData = new std::complex<double>[numElements];
+            self.to_host(hostData, numElements);
+            dataPtr = reinterpret_cast<void *>(hostData);
+          }
+          hostDataFromDevice.emplace_back(dataPtr, [precision](void *data) {
+            CUDAQ_INFO("freeing data that was copied from GPU device for "
+                       "compatibility with NumPy");
+            // Use delete[] to match new[] allocation (not free())
+            if (precision == SimulationState::precision::fp32)
+              delete[] static_cast<std::complex<float> *>(data);
+            else
+              delete[] static_cast<std::complex<double> *>(data);
+          });
+        } else {
+          dataPtr = self.get_tensor().data;
+        }
+
+        // We need to know the precision of the simulation data to get the
+        // data type size and the format descriptor
+        auto [dataTypeSize, desc] =
+            precision == SimulationState::precision::fp32
+                ? std::make_tuple(
+                      sizeof(std::complex<float>),
+                      py::format_descriptor<std::complex<float>>::format())
+                : std::make_tuple(
+                      sizeof(std::complex<double>),
+                      py::format_descriptor<std::complex<double>>::format());
+
+        // Get the shape of the data. Return buffer info in a correctly
+        // shaped manner.
+        auto shape = self.get_tensor().extents;
+        if (shape.size() != 1)
+          return py::buffer_info(dataPtr, dataTypeSize, /*itemsize */
+                                 desc, 2,               /* ndim */
+                                 {shape[0], shape[1]},  /* shape */
+                                 {dataTypeSize * static_cast<ssize_t>(shape[1]),
+                                  dataTypeSize}, /* strides */
+                                 true            /* readonly */
+          );
+        return py::buffer_info(dataPtr, dataTypeSize, /*itemsize */
+                               desc, 1,               /* ndim */
+                               {shape[0]},            /* shape */
+                               {dataTypeSize});
+      })
       .def(
           "__len__",
           [](state &self) {
@@ -531,7 +597,7 @@ void cudaq::bindPyState(py::module &mod, LinkedLibraryHolder &holder) {
             return s[idx];
           },
           R"#(Return the `index`-th element of the state vector.
-          
+
 .. code-block:: python
 
   # Example:
@@ -570,7 +636,7 @@ index pair.
             return s.amplitude(basisState);
           },
           R"#(Return the amplitude of a state in computational basis.
-          
+
 .. code-block:: python
 
   # Example:
@@ -584,7 +650,7 @@ index pair.
             return s.amplitude(bitStringToIntVec(bitString));
           },
           R"#(Return the amplitude of a state in computational basis.
-          
+
 .. code-block:: python
 
   # Example:
@@ -598,7 +664,7 @@ index pair.
             return s.amplitudes(basisStates);
           },
           R"#(Return the amplitude of a list of states in computational basis.
-          
+
 .. code-block:: python
 
   # Example:
@@ -616,7 +682,7 @@ index pair.
             return s.amplitudes(basisStates);
           },
           R"#(Return the amplitudes of a list of states in computational basis.
-          
+
 .. code-block:: python
 
   # Example:
@@ -715,134 +781,28 @@ index pair.
           },
           "Compute overlap with general CuPy device array.");
 
-  py::class_<state_view>(mod, "StateMemoryView", py::buffer_protocol())
-      .def(py::init<state>())
-      .def_buffer([](const state_view &self) {
-        if (self.get_num_tensors() != 1)
-          throw std::runtime_error("Numpy interop is only supported for vector "
-                                   "and matrix state data.");
-
-        // This method is used by Pybind to enable interoperability with NumPy
-        // array data. We therefore must be careful since the state data may
-        // actually be on GPU device.
-
-        // Get the data pointer.
-        // Data may be on GPU device, if so we must make a copy to host.
-        // If users do not want this copy, they will have to operate apart
-        // from Numpy
-        void *dataPtr = nullptr;
-        auto stateVector = self.get_tensor();
-        auto precision = self.get_precision();
-        if (self.is_on_gpu()) {
-          // This is device data, transfer to host, which gives us
-          // ownership of a new data pointer on host. Store it globally
-          // here so we ensure that it gets cleaned up.
-          auto numElements = stateVector.get_num_elements();
-          if (precision == SimulationState::precision::fp32) {
-            auto *hostData = new std::complex<float>[numElements];
-            self.to_host(hostData, numElements);
-            dataPtr = reinterpret_cast<void *>(hostData);
-          } else {
-            auto *hostData = new std::complex<double>[numElements];
-            self.to_host(hostData, numElements);
-            dataPtr = reinterpret_cast<void *>(hostData);
-          }
-          hostDataFromDevice.emplace_back(dataPtr, [](void *data) {
-            CUDAQ_INFO("freeing data that was copied from GPU device for "
-                       "compatibility with NumPy");
-            free(data);
-          });
-        } else {
-          dataPtr = self.get_tensor().data;
-        }
-
-        // We need to know the precision of the simulation data to get the
-        // data type size and the format descriptor
-        auto [dataTypeSize, desc] =
-            precision == SimulationState::precision::fp32
-                ? std::make_tuple(
-                      sizeof(std::complex<float>),
-                      py::format_descriptor<std::complex<float>>::format())
-                : std::make_tuple(
-                      sizeof(std::complex<double>),
-                      py::format_descriptor<std::complex<double>>::format());
-
-        // Get the shape of the data. Return buffer info in a correctly
-        // shaped manner.
-        auto shape = self.get_tensor().extents;
-        if (shape.size() != 1)
-          return py::buffer_info(dataPtr, dataTypeSize, /*itemsize */
-                                 desc, 2,               /* ndim */
-                                 {shape[0], shape[1]},  /* shape */
-                                 {dataTypeSize * static_cast<ssize_t>(shape[1]),
-                                  dataTypeSize}, /* strides */
-                                 true            /* readonly */
-          );
-        return py::buffer_info(dataPtr, dataTypeSize, /*itemsize */
-                               desc, 1,               /* ndim */
-                               {shape[0]},            /* shape */
-                               {dataTypeSize});
-      })
-      .def("__getitem__",
-           [](state_view &s, int idx) {
-             // Support Pythonic negative index
-             if (idx < 0)
-               idx += (1 << s.get_num_qubits());
-             return s[idx];
-           })
-      .def("__getitem__",
-           [](state_view &s, std::vector<int> idx) {
-             if (idx.size() != 2)
-               throw std::runtime_error("Density matrix needs 2 indices; " +
-                                        std::to_string(idx.size()) +
-                                        " provided.");
-             for (auto &val : idx)
-               // Support Pythonic negative index
-               if (val < 0)
-                 val += (1 << s.get_num_qubits());
-             return s(idx[0], idx[1]);
-           })
-      .def("dump",
-           [](state_view &self) {
-             std::stringstream ss;
-             self.dump(ss);
-             py::print(ss.str());
-           })
-      .def("__str__",
-           [](state_view &self) {
-             std::stringstream ss;
-             self.dump(ss);
-             return ss.str();
-           })
-      .def("__len__", [](state_view &self) {
-        if (self.get_num_tensors() > 1 || self.get_tensor().extents.size() != 1)
-          throw std::runtime_error(
-              "len(state) only supported for state-vector like data.");
-
-        return self.get_tensor().extents[0];
-      });
-
   mod.def(
       "get_state_impl",
-      [&](const std::string &shortName, MlirModule module, MlirType retTy,
-          py::args args) {
+      [&](const std::string &shortName, MlirModule module, py::args args) {
         // Check for unsupported cases.
         if (holder.getTarget().name == "remote-mqpu" ||
-            holder.getTarget().name == "orca-photonics" ||
-            is_remote_platform() || is_emulated_platform())
+            holder.getTarget().name == "orca-photonics")
           throw std::runtime_error(
               "get_state is not supported in this context.");
-        return get_state_impl(shortName, module, retTy, args);
+
+        if (is_remote_platform() || is_emulated_platform())
+          return pyGetStateQPU(shortName, module, args);
+        return get_state_impl(shortName, module, args);
       },
-      "See the python documenation for get_state.");
+      "See the python documentation for get_state.");
 
   py::class_<async_state_result>(
       mod, "AsyncStateResult",
-      R"#(A data-type containing the results of a call to :func:`get_state_async`. 
-The `AsyncStateResult` models a future-like type, whose 
-:class:`State` may be returned via an invocation of the `get` method. This 
+      R"#(A data-type containing the results of a call to :func:`get_state_async`.
+The `AsyncStateResult` models a future-like type, whose
+:class:`State` may be returned via an invocation of the `get` method. This
 kicks off a wait on the current thread until the results are available.
-See `future <https://en.cppreference.com/w/cpp/thread/future>`_ 
+See `future <https://en.cppreference.com/w/cpp/thread/future>`_
 for more information on this programming pattern.)#")
       .def(
           "get", [](async_state_result &self) { return self.get(); },
@@ -852,8 +812,8 @@ for more information on this programming pattern.)#")
 
   mod.def(
       "get_state_async_impl",
-      [&](const std::string &shortName, MlirModule module, MlirType retTy,
-          std::size_t qpu_id, py::args args) {
+      [&](const std::string &shortName, MlirModule module, std::size_t qpu_id,
+          py::args args) {
         // Check for unsupported cases.
         if (holder.getTarget().name == "remote-mqpu" ||
             holder.getTarget().name == "nvqc" ||
@@ -862,7 +822,7 @@ for more information on this programming pattern.)#")
           throw std::runtime_error(
               "get_state_async is not supported in this context.");
 
-        return get_state_async_impl(shortName, module, retTy, qpu_id, args);
+        return get_state_async_impl(shortName, module, qpu_id, args);
       },
       "See the python documentation for get_state_async.");
 

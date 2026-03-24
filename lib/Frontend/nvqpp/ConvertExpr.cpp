@@ -1872,7 +1872,7 @@ bool QuakeBridgeVisitor::VisitCallExpr(clang::CallExpr *x) {
           // Loop over the ctrlValues and negate (apply an XOp) those in the
           // negations list.
           if (auto concat = ctrlValues.getDefiningOp<quake::ConcatOp>()) {
-            for (auto v : concat.getQbits())
+            for (auto v : concat.getTargets())
               if (std::find(negations.begin(), negations.end(), v) !=
                   negations.end()) {
                 if (isa<quake::VeqType>(v.getType())) {
@@ -3018,10 +3018,44 @@ bool QuakeBridgeVisitor::VisitCXXConstructExpr(clang::CXXConstructExpr *x) {
             builder.create<quake::DeleteStateOp>(loc, initOp);
           return pushValue(initSt);
         }
-        reportClangError(
-            x, mangler,
-            "internal error: could not determine the number of qubits");
-        return false;
+
+        // Otherwise, it is the cudaq::qvector(std::vector<complex>) ctor.
+        Value numQubits;
+        Type initialsTy = initials.getType();
+        if (auto ptrTy = dyn_cast<cc::PointerType>(initialsTy)) {
+          if (auto arrTy = dyn_cast<cc::ArrayType>(ptrTy.getElementType())) {
+            if (arrTy.isUnknownSize()) {
+              if (auto allocOp = initials.getDefiningOp<cc::AllocaOp>())
+                if (auto size = allocOp.getSeqSize())
+                  numQubits =
+                      builder.create<math::CountTrailingZerosOp>(loc, size);
+            } else {
+              std::size_t arraySize = arrTy.getSize();
+              if (!std::has_single_bit(arraySize)) {
+                reportClangError(x, mangler,
+                                 "state vector must be a power of 2 in length");
+              }
+              numQubits = builder.create<arith::ConstantIntOp>(
+                  loc, std::countr_zero(arraySize), 64);
+            }
+          }
+        } else if (auto stdvecTy = dyn_cast<cc::StdvecType>(initialsTy)) {
+          Value vecLen = builder.create<cc::StdvecSizeOp>(
+              loc, builder.getI64Type(), initials);
+          numQubits = builder.create<math::CountTrailingZerosOp>(loc, vecLen);
+          auto ptrTy = cc::PointerType::get(stdvecTy.getElementType());
+          initials = builder.create<cc::StdvecDataOp>(loc, ptrTy, initials);
+        }
+        if (!numQubits) {
+          reportClangError(
+              x, mangler,
+              "internal error: could not determine the number of qubits");
+          return false;
+        }
+        auto veqTy = quake::VeqType::getUnsized(ctx);
+        auto alloc = builder.create<quake::AllocaOp>(loc, veqTy, numQubits);
+        return pushValue(builder.create<quake::InitializeStateOp>(
+            loc, veqTy, alloc, initials));
       }
       if ((ctorName == "qspan" || ctorName == "qview") &&
           isa<quake::VeqType>(peekValue().getType())) {

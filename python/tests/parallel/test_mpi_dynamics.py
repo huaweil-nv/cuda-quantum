@@ -117,7 +117,7 @@ def testMpiBatchedStatesStoreAll():
     # Verify each result
     for i, result in enumerate(evolution_results):
         final_state = result.final_state()
-        state_array = np.array(cudaq.StateMemoryView(final_state))
+        state_array = np.array(final_state)
 
         # State should be a 2-element vector (single qubit)
         assert state_array.shape == (2,), \
@@ -175,7 +175,7 @@ def testMpiBatchedStatesStoreNone():
 
     for i, result in enumerate(evolution_results):
         final_state = result.final_state()
-        state_array = np.array(cudaq.StateMemoryView(final_state))
+        state_array = np.array(final_state)
         assert state_array.shape == (2,)
         norm = np.linalg.norm(state_array)
         assert abs(norm - 1.0) < 0.01
@@ -221,7 +221,7 @@ def testMpiBatchedDifferentSizes():
 
         for result in evolution_results:
             final_state = result.final_state()
-            state_array = np.array(cudaq.StateMemoryView(final_state))
+            state_array = np.array(final_state)
             assert state_array.shape == (2,)
             norm = np.linalg.norm(state_array)
             assert abs(norm - 1.0) < 0.01
@@ -270,7 +270,7 @@ def testMpiBatchedWithCollapseOperators():
     # With collapse operators, states are density matrices
     for result in evolution_results:
         final_state = result.final_state()
-        state_array = np.array(cudaq.StateMemoryView(final_state))
+        state_array = np.array(final_state)
         # Density matrix should be 2x2 = 4 elements
         assert state_array.size == 4, \
             f"Expected density matrix with 4 elements, got {state_array.size}"
@@ -322,7 +322,7 @@ def testMpiTwoQubitBatched():
 
     for result in evolution_results:
         final_state = result.final_state()
-        state_array = np.array(cudaq.StateMemoryView(final_state))
+        state_array = np.array(final_state)
         # Two-qubit state should have 4 elements
         assert state_array.shape == (4,), \
             f"Expected shape (4,), got {state_array.shape}"
@@ -339,6 +339,12 @@ def testMpiBatchedStatesInvalidBatchSize():
     import cupy as cp
 
     num_ranks = cudaq.mpi.num_ranks()
+
+    # Skip if running with a single MPI rank, since any batch size is divisible by 1
+    if num_ranks == 1:
+        pytest.skip(
+            "This test requires at least 2 MPI ranks to test invalid batch size"
+        )
 
     # Simple single-qubit Hamiltonian
     hamiltonian = 2 * np.pi * 0.1 * spin.x(0)

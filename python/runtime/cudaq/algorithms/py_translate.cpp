@@ -7,11 +7,11 @@
  ******************************************************************************/
 
 #include "py_translate.h"
-#include "common/Logger.h"
 #include "common/Timing.h"
 #include "cudaq/Optimizer/CodeGen/OpenQASMEmitter.h"
 #include "cudaq/Optimizer/CodeGen/Passes.h"
 #include "cudaq/platform/default/python/QPU.h"
+#include "cudaq/runtime/logger/logger.h"
 #include "runtime/cudaq/platform/py_alt_launch_kernel.h"
 #include "utils/OpaqueArguments.h"
 #include "mlir/Bindings/Python/PybindAdaptors.h"
@@ -20,8 +20,7 @@ using namespace mlir;
 
 /// @brief Run `cudaq::translate` on the provided kernel.
 static std::string translate_impl(const std::string &shortName,
-                                  MlirModule module, MlirType returnTy,
-                                  const std::string &format,
+                                  MlirModule module, const std::string &format,
                                   py::args runtimeArguments) {
   StringRef format_ = format;
   auto formatPair = format_.split(':');

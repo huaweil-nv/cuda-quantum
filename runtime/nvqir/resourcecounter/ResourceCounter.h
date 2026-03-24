@@ -59,7 +59,8 @@ public:
 
   /// @brief Sample the multi-qubit state.
   cudaq::ExecutionResult sample(const std::vector<std::size_t> &qubits,
-                                const int shots) override {
+                                const int shots,
+                                bool includeSequentialData = true) override {
     throw std::runtime_error("Can't sample from resource counter simulator!");
   }
 
@@ -71,15 +72,18 @@ public:
 
   void setToZeroState() override { resourceCounts.clear(); }
 
-  void setExecutionContext(cudaq::ExecutionContext *context) override {
-    if (context->name != "resource-count")
+  void configureExecutionContext(cudaq::ExecutionContext &context) override {
+    if (context.name != "resource-count")
       throw std::runtime_error(
           "Illegal use of resource counter simulator! (Did you attempt to run "
           "a kernel inside of a choice function?)");
-    this->CircuitSimulatorBase::setExecutionContext(context);
+    this->CircuitSimulatorBase::configureExecutionContext(context);
   }
 
   cudaq::Resources *getResourceCounts() { return &this->resourceCounts; }
+  void setResourceCounts(cudaq::Resources &&rc) {
+    this->resourceCounts = std::move(rc);
+  }
 
   void setChoiceFunction(std::function<bool()> choice) {
     assert(choice);

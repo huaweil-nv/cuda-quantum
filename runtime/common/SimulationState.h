@@ -8,7 +8,7 @@
 
 #pragma once
 
-#include "cudaq/utils/matrix.h"
+#include "cudaq/operators/matrix.h"
 #include <algorithm>
 #include <bitset>
 #include <complex>
@@ -86,6 +86,11 @@ protected:
     else
       throw std::runtime_error("unsupported data type for state vector.");
 
+    auto &[size, ptr] = sizeAndPtr;
+    if (!ptr || size == 0)
+      throw std::runtime_error(
+          "[getSizeAndPtr] invalid null pointer or zero size");
+
     return sizeAndPtr;
   }
 
@@ -152,8 +157,9 @@ public:
   // is available or can be computed.
   virtual bool hasData() const { return true; }
 
-  /// @brief Helper to retrieve (kernel name, `args` pointers)
-  virtual std::optional<std::pair<std::string, std::vector<void *>>>
+  /// @brief Helper to retrieve (kernel name, kernel code, and `args` pointers)
+  virtual std::optional<
+      std::tuple<std::string, std::string, std::vector<void *>>>
   getKernelInfo() const {
     return std::nullopt;
   }

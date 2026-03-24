@@ -100,10 +100,10 @@ if $gen_cpp_coverage; then
     use_llvm_cov=true
 
     # Run tests (C++ Unittests)
-    python3 -m pip install iqm-client==28.0.0
+    python3 -m pip install -r ${repo_root}/requirements-tests-backend.txt --break-system-packages
     # debug
     export LLVM_PROFILE_FILE=${repo_root}/build/tmp/cudaq-cc/profile-ctest-%9m.profraw
-    ctest --output-on-failure --test-dir ${repo_root}/build -E ctest-nvqpp
+    ctest --output-on-failure --test-dir ${repo_root}/build -E ctest-nvqpp -E ctest-targettests
     ctest_status=$?
     # mpi tests
     # Set MPI_PATH depending on OMPI/MPICH
@@ -173,6 +173,8 @@ if $gen_cpp_coverage; then
             -e '/Linking CXX executable/s/^.*Linking CXX executable //p' ${repo_root}/build/logs/ninja_output.txt))
         objects=""
         for item in "${binarys[@]}"; do
+            # Static libraries (.a) often produce malformed coverage data; only use shared libs and executables
+            [[ "$item" == *.a ]] && continue
             objects+="-object ${repo_root}/build/$item "
         done
 
@@ -221,14 +223,20 @@ if $gen_cpp_coverage; then
 fi
 
 if $gen_py_coverage; then
-    pip install coverage
-    pip install iqm_client==28.0.0 --user -vvv
-    rm -rf ${repo_root}/_skbuild
-    pip install -e . --user -vvv
+    PY_VER=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
+    apt install -y python${PY_VER}-venv
+ 
+    # Needs to be installed outside of venv
+    python3 -m pip install -r ${repo_root}/requirements-tests-backend.txt --break-system-packages
 
-    # normal tests
+    venv_dir=${repo_root}/build/venv-coverage
+    python3 -m venv "$venv_dir"
+    . "${venv_dir}/bin/activate"
+    pip install coverage
+    rm -rf ${repo_root}/_skbuild
+    pip install . -vvv
+    mkdir -p ${repo_root}/build/pycoverage
     coverage run -a -m pytest -v python/tests/ --ignore python/tests/backends
-    # backend tests
     for backendTest in python/tests/backends/*.py; do
         coverage run -a -m pytest -v $backendTest
         pytest_status=$?

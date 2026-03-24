@@ -73,7 +73,6 @@ protected:
   using nvqir::CircuitSimulatorBase<ScalarType>::nQubitsAllocated;
   using nvqir::CircuitSimulatorBase<ScalarType>::stateDimension;
   using nvqir::CircuitSimulatorBase<ScalarType>::calculateStateDim;
-  using nvqir::CircuitSimulatorBase<ScalarType>::executionContext;
   using nvqir::CircuitSimulatorBase<ScalarType>::gateToString;
   using nvqir::CircuitSimulatorBase<ScalarType>::x;
   using nvqir::CircuitSimulatorBase<ScalarType>::flushGateQueue;
@@ -128,16 +127,13 @@ public:
     return std::make_unique<cudaq::CuDensityMatState>();
   }
 
-  void resetExecutionContext() override {
-    // If null, do nothing
-    if (!executionContext)
-      return;
+  void finalizeExecutionContext(cudaq::ExecutionContext &context) override {
     // Just check that the dynamics target was not invoked in gate simulation
     // contexts.
-    if (executionContext->name != "evolve")
+    if (context.name != "evolve")
       throw std::runtime_error(fmt::format(
           "[dynamics target] Execution context '{}' is not supported.",
-          executionContext->name));
+          context.name));
   }
 
   void addQubitToState() override {
@@ -166,7 +162,8 @@ public:
         "[dynamics target] Quantum gate simulation is not supported.");
   }
   cudaq::ExecutionResult sample(const std::vector<std::size_t> &qubitIdxs,
-                                const int shots) override {
+                                const int shots,
+                                bool includeSequentialData = true) override {
     throw std::runtime_error("[dynamics target] Quantum gate simulation is not "
                              "supported.");
     return cudaq::ExecutionResult();

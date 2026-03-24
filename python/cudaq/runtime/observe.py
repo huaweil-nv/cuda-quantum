@@ -17,6 +17,11 @@ def isValidObserveKernel(kernel):
         decorator = kernel
     else:
         decorator = mk_decorator(kernel)
+    if not decorator.supports_compilation():
+        return [
+            False,
+            "Unsupported target / Invalid kernel for `observe`: cannot compile"
+        ]
     return cudaq_runtime.isValidObserveKernel_impl(decorator.uniqName,
                                                    decorator.qkeModule)
 
@@ -25,27 +30,24 @@ def __broadcastObserve(kernel, spin_operator, *args, shots_count=0, qpu_id=0):
     argSet = __createArgumentSet(*args)
     N = len(argSet)
     results = []
+    ctx = cudaq_runtime.ExecutionContext('observe', shots_count, qpu_id)
+    ctx.totalIterations = N
+    ctx.setSpinOperator(spin_operator)
+    has_vector_args = isa_kernel_decorator(kernel) and any(
+        hasattr(a, 'shape') and len(a.shape) == 2 for a in args)
+    if has_vector_args:
+        ctx.allowJitEngineCaching = True
+        ctx.useParametricJit = True
     for i, a in enumerate(argSet):
-        ctx = cudaq_runtime.ExecutionContext('observe', shots_count, qpu_id)
-        ctx.totalIterations = N
         ctx.batchIteration = i
-        ctx.setSpinOperator(spin_operator)
-        cudaq_runtime.setExecutionContext(ctx)
-        try:
+        with ctx:
             kernel(*a)
-        except BaseException:
-            # silence any further exceptions
-            try:
-                cudaq_runtime.resetExecutionContext()
-            except BaseException:
-                pass
-            raise
-        else:
-            cudaq_runtime.resetExecutionContext()
         res = ctx.result
         results.append(
             cudaq_runtime.ObserveResult(ctx.getExpectationValue(),
                                         spin_operator, res))
+    if has_vector_args:
+        ctx.unset_jit_engine()
     return results
 
 
@@ -117,6 +119,12 @@ def observe(kernel,
                                 shots_count=shots_count,
                                 noise_model=noise_model)
 
+    def __computeTermExpectation(term, observe_result):
+        if term.is_identity():
+            return term.evaluate_coefficient().real
+        else:
+            return observe_result.expectation(term)
+
     if noise_model != None:
         cudaq_runtime.set_noise(noise_model)
 
@@ -136,7 +144,7 @@ def observe(kernel,
     elif isa_dynamic_kernel(kernel):
         decorator = mk_decorator(kernel)
     else:
-        raise RuntimeRrror(
+        raise RuntimeError(
             "unrecognized kernel - did you forget the @kernel attribute?")
     if (decorator.launch_args_required() != 0) and (decorator.formal_arity()
                                                     != len(args)):
@@ -168,11 +176,8 @@ def observe(kernel,
                 raise RuntimeError(
                     "num_trajectories is provided without a noise_model.")
             ctx.numberTrajectories = num_trajectories
-        cudaq_runtime.setExecutionContext(ctx)
-        try:
+        with ctx:
             kernel(*args)
-        finally:
-            cudaq_runtime.resetExecutionContext()
         res = ctx.result
 
         expVal = ctx.getExpectationValue()
@@ -200,9 +205,19 @@ def observe(kernel,
 
         results = []
         for op in spin_operator:
+            exp_val = 0.0
+
+            if op.term_count == 1:
+                term = op if isinstance(
+                    op, cudaq_runtime.SpinOperatorTerm) else next(iter(op))
+                exp_val = __computeTermExpectation(term, observeResult)
+            else:
+                for term in op:
+                    exp_val += __computeTermExpectation(term, observeResult)
+
             results.append(
-                cudaq_runtime.ObserveResult(observeResult.expectation(op), op,
-                                            observeResult.counts(op)))
+                cudaq_runtime.ObserveResult(exp_val, op,
+                                            observeResult.counts()))
         ctx.unset_jit_engine()
 
     if noise_model != None:
@@ -246,7 +261,7 @@ def observe_async(kernel, spin_operator, *args, qpu_id=0, shots_count=-1):
     elif isa_dynamic_kernel(kernel):
         decorator = mk_decorator(kernel)
     else:
-        raise RuntimeRrror(
+        raise RuntimeError(
             "unrecognized kernel - did you forget the @kernel attribute?")
     if (decorator.launch_args_required() != 0) and (decorator.formal_arity()
                                                     != len(args)):
@@ -255,11 +270,9 @@ def observe_async(kernel, spin_operator, *args, qpu_id=0, shots_count=-1):
             str(len(args)) + " given and " + str(decorator.formal_arity()) +
             " expected.")
     shortName = decorator.uniqName
-    specMod, processedArgs = decorator.handle_call_arguments(*args)
-    returnTy = decorator.get_none_type()
-    return cudaq_runtime.observe_async_impl(shortName, specMod, returnTy,
-                                            spin_operator, qpu_id, shots_count,
-                                            *processedArgs)
+    processedArgs, module = decorator.prepare_call(*args)
+    return cudaq_runtime.observe_async_impl(shortName, module, spin_operator,
+                                            qpu_id, shots_count, *processedArgs)
 
 
 def observe_parallel(kernel,
@@ -317,12 +330,10 @@ def observe_parallel(kernel,
     elif isa_dynamic_kernel(kernel):
         decorator = mk_decorator(kernel)
     else:
-        raise RuntimeRrror(
+        raise RuntimeError(
             "unrecognized kernel - did you forget the @kernel attribute?")
     shortName = decorator.uniqName
-    specMod, processedArgs = decorator.handle_call_arguments(*args)
-    returnTy = decorator.get_none_type()
-    return cudaq_runtime.observe_parallel_impl(shortName, specMod, returnTy,
-                                               execution, spin_operator,
-                                               shots_count, noise_model,
-                                               *processedArgs)
+    processedArgs, module = decorator.prepare_call(*args)
+    return cudaq_runtime.observe_parallel_impl(shortName, module, execution,
+                                               spin_operator, shots_count,
+                                               noise_model, *processedArgs)

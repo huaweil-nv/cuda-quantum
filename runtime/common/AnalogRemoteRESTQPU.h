@@ -9,6 +9,7 @@
 #pragma once
 
 #include "common/BaseRemoteRESTQPU.h"
+#include <optional>
 
 namespace cudaq {
 
@@ -36,6 +37,8 @@ public:
                void *args, std::uint64_t voidStarSize,
                std::uint64_t resultOffset,
                const std::vector<void *> &rawArgs) override {
+    auto executionContext = cudaq::getExecutionContext();
+
     if (kernelName.find(cudaq::runtime::cudaqAHKPrefixName) != 0)
       throw std::runtime_error(
           "Arbitrary kernel execution is not supported on this target.");
@@ -51,7 +54,8 @@ public:
     std::string strArgs = charArgs;
     nlohmann::json j;
     std::vector<std::size_t> mapping_reorder_idx;
-    codes.emplace_back(name, strArgs, j, mapping_reorder_idx);
+    codes.emplace_back(name, strArgs, std::nullopt, std::nullopt, j,
+                       mapping_reorder_idx);
 
     if (executionContext) {
       executor->setShots(executionContext->shots);
