@@ -234,7 +234,7 @@ if $gen_py_coverage; then
     . "${venv_dir}/bin/activate"
     pip install coverage
     rm -rf ${repo_root}/_skbuild
-    pip install . -vvv
+    pip install -e . -vvv
     mkdir -p ${repo_root}/build/pycoverage
     coverage run -a -m pytest -v python/tests/ --ignore python/tests/backends
     for backendTest in python/tests/backends/*.py; do
