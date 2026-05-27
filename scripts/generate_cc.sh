@@ -119,6 +119,44 @@ gen_cplusplus_export() {
         "${coverage_ignore_args[@]}" > ${repo_root}/build/ccoverage/coverage.json
 }
 
+set_mpi_path() {
+    if [ -n "${MPI_PATH:-}" ]; then
+        export MPI_PATH
+        return 0
+    fi
+
+    is_valid_mpi_path() {
+        [ -e "$1/include/mpi.h" ] && {
+            compgen -G "$1/lib/libmpi.so*" > /dev/null ||
+            compgen -G "$1/lib64/libmpi.so*" > /dev/null
+        }
+    }
+
+    local mpi_bin=""
+    local mpi_candidate=""
+    mpi_bin=$(command -v mpic++ || command -v mpicc || command -v ompi_info || true)
+    if [ -n "$mpi_bin" ]; then
+        mpi_candidate=$(cd "$(dirname "$mpi_bin")/.." && pwd)
+        if is_valid_mpi_path "$mpi_candidate"; then
+            export MPI_PATH="$mpi_candidate"
+            return 0
+        fi
+    fi
+
+    for mpi_candidate in \
+        "/usr/local/openmpi" \
+        "/usr/lib/$(uname -m)-linux-gnu/openmpi" \
+        "/usr/lib/$(uname -m)-linux-gnu/mpich"; do
+        if is_valid_mpi_path "$mpi_candidate"; then
+            export MPI_PATH="$mpi_candidate"
+            return 0
+        fi
+    done
+
+    echo "::error Could not determine MPI_PATH."
+    return 1
+}
+
 if $gen_cpp_coverage; then
     use_llvm_cov=true
 
@@ -133,12 +171,12 @@ if $gen_cpp_coverage; then
     fi
 
     # Run the custom MPI plugin activation test the same way CI does.
-    has_ompiinfo=$(which ompi_info || true)
-    if [[ ! -z $has_ompiinfo ]]; then
-      export MPI_PATH="/usr/lib/$(uname -m)-linux-gnu/openmpi/"
-    else
-      export MPI_PATH="/usr/lib/$(uname -m)-linux-gnu/mpich/"
+    set_mpi_path
+    mpi_path_status=$?
+    if [ ! $mpi_path_status -eq 0 ]; then
+      exit 1
     fi
+    echo "Using MPI_PATH=$MPI_PATH"
     export LLVM_PROFILE_FILE=${repo_root}/build/tmp/cudaq-cc/profile-mpi-plugin-%9m.profraw
     cd ${repo_root}/runtime/cudaq/distributed/builtin/
     cp ../distributed_capi.h .
