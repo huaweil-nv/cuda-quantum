@@ -166,7 +166,8 @@ if $gen_cpp_coverage; then
     export LLVM_PROFILE_FILE=${repo_root}/build/tmp/cudaq-cc/profile-python-%9m.profraw
     python3 -m pytest -v ${repo_root}/python/tests/ \
         --ignore ${repo_root}/python/tests/backends \
-        --ignore ${repo_root}/python/tests/contrib
+        --ignore ${repo_root}/python/tests/contrib \
+        --ignore ${repo_root}/python/tests/parallel
     pytest_status=$?
     if [ ! $pytest_status -eq 0 ]; then
         echo "::error Python tests failed with status $pytest_status."
@@ -275,6 +276,7 @@ if $gen_py_coverage; then
     coverage run -a -m pytest -v python/tests/ \
         --ignore python/tests/backends \
         --ignore python/tests/contrib \
+        --ignore python/tests/parallel \
         --ignore python/tests/mlir
     pytest_status=$?
     if [ ! $pytest_status -eq 0 ]; then
