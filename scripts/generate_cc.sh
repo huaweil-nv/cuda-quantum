@@ -65,68 +65,89 @@ repo_root=$(cd "$this_file_dir" && git rev-parse --show-toplevel)
 # Set envs
 if $gen_cpp_coverage; then
     export CUDAQ_ENABLE_CC=ON
-    clang_ver=$(clang --version 2>/dev/null | grep -oP 'version \K[0-9]+')
-    arch=$(uname -m)-unknown-linux-gnu
-    profile_src="$LLVM_INSTALL_PREFIX/lib/clang/$clang_ver/lib/$arch/libclang_rt.profile.a"
-    profile_dst="/usr/lib/llvm-$clang_ver/lib/clang/$clang_ver/lib/linux/libclang_rt.profile-$(uname -m).a"
-    mkdir -p "$(dirname "$profile_dst")"
-    ln -sf "$profile_src" "$profile_dst"
 fi
 
 # Build project
 # debug
 export LLVM_PROFILE_FILE=${repo_root}/build/tmp/cudaq-cc/profile-build-%9m.profraw
-CUDAQ_WERROR=OFF bash ${repo_root}/scripts/build_cudaq.sh -- -DCUDAQ_TEST_OMP_SLOTS=2
+# CUDAQ_WERROR=OFF bash ${repo_root}/scripts/build_cudaq.sh -- -DCUDAQ_TEST_OMP_SLOTS=2
+bash ${repo_root}/scripts/build_cudaq.sh -- -DCUDAQ_TEST_OMP_SLOTS=2
 if [ $? -ne 0 ]; then
     echo "Build cudaq failure: $?" >&2
     exit 1
 fi
 
-# Function to run the llvm-cov command
-gen_cplusplus_report() {
-    if $is_codecov_format; then
-        mkdir -p ${repo_root}/build/ccoverage
-        llvm-cov show ${objects} -instr-profile=${repo_root}/build/coverage.profdata --ignore-filename-regex="${repo_root}/tpls/*" \
-            --ignore-filename-regex="${repo_root}/build/*" --ignore-filename-regex="${repo_root}/unittests/*" 2>&1 > ${repo_root}/build/ccoverage/coverage.txt
-    else
-        llvm-cov show -format=html ${objects} -instr-profile=${repo_root}/build/coverage.profdata --ignore-filename-regex="${repo_root}/runtime/cudaq/platform/default/rest_serve/*" --ignore-filename-regex="${repo_root}/runtime/cudaq/platform/fermioniq/*" --ignore-filename-regex="${repo_root}/runtime/cudaq/platform/orca/*" --ignore-filename-regex="${repo_root}/runtime/cudaq/platform/quera/*" --ignore-filename-regex="${repo_root}/tpls/*" \
-            --ignore-filename-regex="${repo_root}/build/*" --ignore-filename-regex="${repo_root}/unittests/*" --ignore-filename-regex="usr/local/cuda-13.0/*" --ignore-filename-regex="usr/local/llvm/*" \
-            --ignore-filename-regex="${repo_root}/python/tests/interop/test_cpp_quantum_algorithm_module.cpp" \
-            --ignore-filename-regex="${repo_root}/runtime/test/test_argument_conversion.cpp" \
-            --ignore-filename-regex="${repo_root}/runtime/cudaq/platform/default/rest/helpers/braket/*" \
-            --ignore-filename-regex="${repo_root}/runtime/common/Braket.*" \
-            -o ${repo_root}/build/ccoverage 2>&1
+# Functions to run llvm-cov commands.
+set_cplusplus_ignore_args() {
+    coverage_ignore_args=(
+        --ignore-filename-regex="${repo_root}/tpls/*"
+        --ignore-filename-regex="${repo_root}/build/*"
+        --ignore-filename-regex="${repo_root}/unittests/*"
+        --ignore-filename-regex="usr/include/python[0-9.]*/.*"
+    )
+
+    if ! $is_codecov_format; then
+        coverage_ignore_args+=(
+            --ignore-filename-regex="${repo_root}/runtime/cudaq/platform/default/rest_serve/*"
+            --ignore-filename-regex="${repo_root}/runtime/cudaq/platform/fermioniq/*"
+            --ignore-filename-regex="${repo_root}/runtime/cudaq/platform/orca/*"
+            --ignore-filename-regex="${repo_root}/runtime/cudaq/platform/quera/*"
+            --ignore-filename-regex="usr/local/cuda-13.0/*"
+            --ignore-filename-regex="usr/local/llvm/*"
+            --ignore-filename-regex="${repo_root}/python/tests/interop/test_cpp_quantum_algorithm_module.cpp"
+            --ignore-filename-regex="${repo_root}/runtime/test/test_argument_conversion.cpp"
+            --ignore-filename-regex="${repo_root}/runtime/cudaq/platform/default/rest/helpers/braket/*"
+            --ignore-filename-regex="${repo_root}/runtime/common/Braket.*"
+        )
     fi
+}
+
+gen_cplusplus_report() {
+    mkdir -p ${repo_root}/build/ccoverage
+    if $is_codecov_format; then
+        llvm-cov show ${objects} -instr-profile=${repo_root}/build/coverage.profdata \
+            "${coverage_ignore_args[@]}" 2>&1 > ${repo_root}/build/ccoverage/coverage.txt
+    else
+        llvm-cov show -format=html ${objects} -instr-profile=${repo_root}/build/coverage.profdata \
+            "${coverage_ignore_args[@]}" -o ${repo_root}/build/ccoverage 2>&1
+    fi
+}
+
+gen_cplusplus_export() {
+    mkdir -p ${repo_root}/build/ccoverage
+    llvm-cov export ${objects} -instr-profile=${repo_root}/build/coverage.profdata \
+        "${coverage_ignore_args[@]}" > ${repo_root}/build/ccoverage/coverage.json
 }
 
 if $gen_cpp_coverage; then
     use_llvm_cov=true
 
-    # Run tests (C++ Unittests)
+    # Run CTest and lit suites through the same wrapper used by CI.
     python3 -m pip install -r ${repo_root}/requirements-tests-backend.txt --break-system-packages
-    # debug
-    export LLVM_PROFILE_FILE=${repo_root}/build/tmp/cudaq-cc/profile-ctest-%9m.profraw
-    ctest --output-on-failure --test-dir ${repo_root}/build -E ctest-nvqpp -E ctest-targettests
-    ctest_status=$?
-    # mpi tests
-    # Set MPI_PATH depending on OMPI/MPICH
-    # has_ompiinfo=$(which ompi_info || true)
-    # if [[ ! -z $has_ompiinfo ]]; then
-    #   export MPI_PATH="/usr/lib/$(uname -m)-linux-gnu/openmpi/"
-    # else
-    #   export MPI_PATH="/usr/lib/$(uname -m)-linux-gnu/mpich/"
-    # fi
-    MPI_PATH=/usr/local/openmpi
-    # Run the activation script
+    export LLVM_PROFILE_FILE=${repo_root}/build/tmp/cudaq-cc/profile-run-tests-%9m.profraw
+    bash ${repo_root}/scripts/run_tests.sh -v -B ${repo_root}/build
+    run_tests_status=$?
+    if [ ! $run_tests_status -eq 0 ]; then
+      echo "::error run_tests.sh failed with status $run_tests_status."
+      exit 1
+    fi
+
+    # Run the custom MPI plugin activation test the same way CI does.
+    has_ompiinfo=$(which ompi_info || true)
+    if [[ ! -z $has_ompiinfo ]]; then
+      export MPI_PATH="/usr/lib/$(uname -m)-linux-gnu/openmpi/"
+    else
+      export MPI_PATH="/usr/lib/$(uname -m)-linux-gnu/mpich/"
+    fi
+    export LLVM_PROFILE_FILE=${repo_root}/build/tmp/cudaq-cc/profile-mpi-plugin-%9m.profraw
     cd ${repo_root}/runtime/cudaq/distributed/builtin/
     cp ../distributed_capi.h .
-    bash activate_custom_mpi.sh
+    source activate_custom_mpi.sh
     external_plugin_build_status=$?
     cd -
-    export CUDAQ_MPI_COMM_LIB=${repo_root}/runtime/cudaq/distributed/builtin/libcudaq_distributed_interface_mpi.so
     if [ ! $external_plugin_build_status -eq 0 ] ; then
       echo "Test CUDA Quantum MPI Plugin Activation failed to activate the plugin with status $external_plugin_build_status."
-    #   exit 1
+      exit 1
     fi
     echo $CUDAQ_MPI_COMM_LIB
     # Rerun the MPI plugin test
@@ -135,29 +156,22 @@ if $gen_cpp_coverage; then
     external_plugin_status=$?   
     if [ ! $external_plugin_status -eq 0 ] ; then
       echo "Test CUDA Quantum MPI Plugin Activation failed with status $external_plugin_status."
-    #   exit 1
+      exit 1
     fi
-
-    # debug
-    export LLVM_PROFILE_FILE=${repo_root}/build/tmp/cudaq-cc/profile-llvmlit-%9m.profraw
-    /usr/local/llvm/bin/llvm-lit -v --param nvqpp_site_config=${repo_root}/build/cudaq/test/lit.site.cfg.py ${repo_root}/build/cudaq/test
-    lit_status=$?
-    /usr/local/llvm/bin/llvm-lit -v --param nvqpp_site_config=${repo_root}/build/targettests/lit.site.cfg.py ${repo_root}/build/targettests
-    targ_status=$?
-    /usr/local/llvm/bin/llvm-lit -v --param nvqpp_site_config=${repo_root}/build/python/tests/mlir/lit.site.cfg.py ${repo_root}/build/python/tests/mlir
-    pymlir_status=$?
-    #if [ ! $ctest_status -eq 0 ] || [ ! $lit_status -eq 0 ] || [ $targ_status -ne 0 ] || [ $pymlir_status -ne 0 ]; then
-    #    echo "::error C++ tests failed (ctest status $ctest_status, llvm-lit status $lit_status, \
-    #target tests status $targ_status, Python MLIR status $pymlir_status)."
-    #    exit 1
-    #fi
 
     # Run tests (Python tests)
     rm -rf ${repo_root}/_skbuild
     pip install ${repo_root} --user -vvv
     # debug
     export LLVM_PROFILE_FILE=${repo_root}/build/tmp/cudaq-cc/profile-python-%9m.profraw
-    python3 -m pytest -v ${repo_root}/python/tests/ --ignore ${repo_root}/python/tests/backends
+    python3 -m pytest -v ${repo_root}/python/tests/ \
+        --ignore ${repo_root}/python/tests/backends \
+        --ignore ${repo_root}/python/tests/contrib
+    pytest_status=$?
+    if [ ! $pytest_status -eq 0 ]; then
+        echo "::error Python tests failed with status $pytest_status."
+        exit 1
+    fi
     for backendTest in ${repo_root}/python/tests/backends/*.py; do
         python3 -m pytest -v $backendTest
         pytest_status=$?
@@ -166,6 +180,18 @@ if $gen_cpp_coverage; then
             exit 1
         fi
     done
+    python3 -m pip install qiskit --user
+    qiskit_status=$?
+    if [ ! $qiskit_status -eq 0 ]; then
+        echo "::error qiskit installation failed with status $qiskit_status."
+        exit 1
+    fi
+    python3 -m pytest -v ${repo_root}/python/tests/contrib
+    pytest_status=$?
+    if [ ! $pytest_status -eq 0 ]; then
+        echo "::error Python contrib tests failed with status $pytest_status."
+        exit 1
+    fi
 
     # Generate report
     if $use_llvm_cov; then
@@ -180,6 +206,7 @@ if $gen_cpp_coverage; then
             [[ "$item" == *.a ]] && continue
             objects+="-object ${repo_root}/build/$item "
         done
+        set_cplusplus_ignore_args
 
         # The purpose of adding this code is to avoid the llvm-cov show command
         # from being unable to generate a report due to a malformed format error of an object.
@@ -218,6 +245,12 @@ if $gen_cpp_coverage; then
                 break
             fi
         done
+        gen_cplusplus_export
+        export_status=$?
+        if [ ! $export_status -eq 0 ]; then
+            echo "::error llvm-cov export failed with status $export_status."
+            exit 1
+        fi
     else
         # Use gcov
         echo "Currently not supported, running tests using llvm-lit fails"
@@ -239,7 +272,15 @@ if $gen_py_coverage; then
     rm -rf ${repo_root}/_skbuild
     pip install -e . -vvv
     mkdir -p ${repo_root}/build/pycoverage
-    coverage run -a -m pytest -v python/tests/ --ignore python/tests/backends
+    coverage run -a -m pytest -v python/tests/ \
+        --ignore python/tests/backends \
+        --ignore python/tests/contrib \
+        --ignore python/tests/mlir
+    pytest_status=$?
+    if [ ! $pytest_status -eq 0 ]; then
+        echo "::error Python coverage tests failed with status $pytest_status."
+        exit 1
+    fi
     for backendTest in python/tests/backends/*.py; do
         coverage run -a -m pytest -v $backendTest
         pytest_status=$?
@@ -248,33 +289,21 @@ if $gen_py_coverage; then
             exit 1
         fi
     done
-    # mlir tests
-    # Iterate through all .py files in python/tests/mlir directory (including subdirectories)
-    find ${repo_root}/python/tests/mlir -name "*.py" | while read -r test_file; do
-        # Check if the file contains XFAIL marker, if so skip it
-        if grep -q "# XFAIL:" "$test_file"; then
-            echo "Skipping file with XFAIL marker: $test_file"
-            continue
-        fi
-        
-        # Check if the file contains RUN instruction
-        run_line=$(grep "# RUN:" "$test_file" | head -n 1)
-        if [ -z "$run_line" ]; then
-            echo "Skipping file without RUN instruction: $test_file"
-            continue
-        fi
-        
-        # Determine how to run the test based on RUN instruction
-        if [[ "$run_line" == *"python"* ]]; then
-            echo "Running test with python: $test_file"
-            coverage run -a "$test_file"
-        elif [[ "$run_line" == *"pytest"* ]]; then
-            echo "Running test with pytest: $test_file"
-            coverage run -a -m pytest "$test_file"
-        else
-            echo "RUN instruction format unclear, skipping: $test_file"
-        fi
-    done
+    pip install qiskit
+    qiskit_status=$?
+    if [ ! $qiskit_status -eq 0 ]; then
+        echo "::error qiskit installation failed with status $qiskit_status."
+        exit 1
+    fi
+    coverage run -a -m pytest -v python/tests/contrib
+    pytest_status=$?
+    if [ ! $pytest_status -eq 0 ]; then
+        echo "::error Python contrib tests failed with status $pytest_status."
+        exit 1
+    fi
+    # MLIR regression tests are lit tests and depend on lit site configuration,
+    # FileCheck semantics, and build-tree targets. They are covered above by
+    # run_tests.sh instead of being executed directly through coverage.py.
 
     # generate report
     if $is_codecov_format; then

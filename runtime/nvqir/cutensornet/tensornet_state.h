@@ -18,16 +18,6 @@
 #include <span>
 #include <unordered_map>
 
-// Macro to disable code coverage instrumentation for specific functions.
-// This is a workaround for a Clang 16 bug in CoverageMappingGen that causes
-// compiler crashes ("File exit not handled before popRegions") on complex
-// template functions.
-#if defined(__clang__) && defined(__clang_major__) && __clang_major__ >= 11
-#define CUDAQ_NO_COVERAGE __attribute__((no_profile_instrument_function))
-#else
-#define CUDAQ_NO_COVERAGE
-#endif
-
 namespace nvqir {
 /// This is used to track whether the tensor state is default initialized vs
 /// already has some gates applied to.
@@ -269,13 +259,11 @@ private:
   // Note: `factorizeMPS` is an end-to-end API for factorization.
   // This factorization can be split into `cutensornetStateFinalizeMPS` and
   // `cutensornetStateCompute` to facilitate reuse.
-  // Note: CUDAQ_NO_COVERAGE is added to work around Clang 16 coverage mapping
-  // bug that causes compiler crashes on these template functions.
-  CUDAQ_NO_COVERAGE std::vector<MPSTensor> setupMPSFactorize(
+  std::vector<MPSTensor> setupMPSFactorize(
       int64_t maxExtent, double absCutoff, double relCutoff,
       cutensornetTensorSVDAlgo_t algo,
       const std::optional<cutensornetStateMPSGaugeOption_t> &gauge);
-  CUDAQ_NO_COVERAGE void computeMPSFactorize(std::vector<MPSTensor> &mpsTensors);
+  void computeMPSFactorize(std::vector<MPSTensor> &mpsTensors);
 
   /// Internal methods for sampling
   std::pair<cutensornetStateSampler_t, cutensornetWorkspaceDescriptor_t>
