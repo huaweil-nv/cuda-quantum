@@ -12,11 +12,7 @@ import numpy as np
 from typing import List
 from multiprocessing import Process
 from network_utils import check_server_connection
-try:
-    from utils.mock_qpu.ionq import startServer
-except:
-    print("Mock qpu not available, skipping IonQ tests.")
-    pytest.skip("Mock qpu not available.", allow_module_level=True)
+from utils.mock_qpu.ionq import startServer
 
 # Define the port for the mock server
 port = 62441
@@ -350,6 +346,26 @@ def test_2q_unitary_synthesis():
 
     counts = cudaq.sample(ctrl_z_kernel)
     assert counts["0010011"] == 1000
+
+
+@pytest.mark.skip_macos_arm64_jit
+def test_ionq_dem_from_kernel_target_independent():
+
+    @cudaq.kernel
+    def kernel():
+        q = cudaq.qubit()
+        x(q)
+        cudaq.apply_noise(cudaq.XError, 0.1, q)
+        m = mz(q)
+        cudaq.detector(m)
+
+    noise = cudaq.NoiseModel()
+    dem_text = cudaq.dem_from_kernel(kernel, noise_model=noise)
+    assert "error(0.1" in dem_text
+    assert "D0" in dem_text
+
+    counts = cudaq.sample(kernel)
+    assert counts['1'] == 1000
 
 
 @pytest.mark.skip_macos_arm64_jit

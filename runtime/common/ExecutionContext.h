@@ -15,6 +15,7 @@
 #include "Trace.h"
 #include "cudaq/algorithms/optimizer.h"
 #include "cudaq/operators.h"
+#include <exception>
 #include <optional>
 #include <string_view>
 
@@ -77,7 +78,7 @@ public:
 
   /// @brief When execution asynchronously, store the expected results as a
   /// cudaq::future here.
-  details::future futureResult;
+  detail::future futureResult;
 
   /// @brief Construct a `async_sample_result` so as to pass across Python
   /// boundary
@@ -124,10 +125,6 @@ public:
   /// order.
   bool explicitMeasurements = false;
 
-  /// @brief Flag to indicate that a warning about named measurement registers
-  /// in sampling context has already been emitted.
-  bool warnedNamedMeasurements = false;
-
   /// @brief Probability of occurrence of each error mechanism (column) in
   /// Measurement Syndrome Matrix (0-1 range).
   std::optional<std::vector<double>> msm_probabilities;
@@ -143,7 +140,7 @@ public:
   /// https://arxiv.org/pdf/2407.13826.
   std::optional<std::pair<std::size_t, std::size_t>> msm_dimensions;
 
-  bool allowJitEngineCaching = false;
+  bool allowCompiledModuleCaching = false;
 
   bool useParametricJit = false;
 
@@ -154,12 +151,34 @@ public:
 
   /// @brief For performance, a launcher may cache the JIT execution engine and
   /// use it for multiple discrete calls.
-  std::optional<cudaq::JitEngine> jitEng = std::nullopt;
+  std::optional<cudaq::CompiledModule> cachedCompiledModule = std::nullopt;
 
   /// @brief Dispatcher towards the policy specific launch.
   std::function<void(const AnyModule &module, const KernelArgs &args)>
       executeKernelApi;
+
+  /// @brief Slot for the detector error model, as `.dem` text.
+  std::string dem_text;
   /// @endcond
+
+  /// @brief Captures an exception raised by the kernel while it runs on a
+  /// backend that cannot unwind C++ exceptions through JIT-compiled kernel
+  /// frames (notably macOS arm64, where the ORC-JIT'd kernel frame carries no
+  /// unwind info the system unwinder can use, so a throw escaping into it calls
+  /// `std::terminate`). The simulator stores the error here instead of throwing
+  /// across the JIT boundary, and the launcher re-throws it from a C++ frame
+  /// above that boundary once the kernel returns. Callers therefore observe the
+  /// same exception they would on platforms where direct unwinding works.
+  std::exception_ptr deferredKernelException;
+
+  /// @brief True while a JIT/AOT-compiled kernel frame is executing on this
+  /// thread (set by the launcher around the kernel invocation; see
+  /// QPU::InKernelLaunchScope). The simulator only defers exceptions into
+  /// `deferredKernelException` while this is set. Outside the kernel frame
+  /// (for example, gate application during sample/observe finalization) there
+  /// is no JIT frame for an exception to unwind through, so it is thrown
+  /// directly, preserving the behavior callers see on all platforms.
+  bool inKernelLaunch = false;
 };
 
 //===----------------------------------------------------------------------===//
@@ -198,36 +217,12 @@ void setExecutionContext(ExecutionContext *ctx);
 /// Use `quantum_platform::with_execution_context` instead of setting/resetting
 /// the execution context manually.
 void resetExecutionContext();
-} // namespace detail
 
-namespace compiler_artifact {
-/// Saves and reuses the JITEngine across launches
-///
-/// This will exhibit undefined behavior if the launch arguments/context
-/// in any way differs from the saved launch.
-void enablePersistentJITEngine();
-void disablePersistentJITEngine();
-bool isPersistingJITEngine();
-
-/// Checks that the compiler artifact (if present) can be reused for the
-/// given kernel. Throws if a different kernel name was previously saved.
-void checkArtifactReuse(const std::string kernelName,
-                        const cudaq::JitEngine jit);
-
-void saveArtifact(const std::string kernelName, const cudaq::JitEngine jit);
-
-/// Returns the saved JIT engine if one is present for \p kernelName.
-/// Throws if a different kernel name was previously saved.
-/// Returns std::nullopt if no artifact has been saved yet.
-std::optional<JitEngine> getArtifactJit(const std::string &kernelName);
-}; // namespace compiler_artifact
-
-namespace detail {
 /// @brief Execute the given function within the given policy and execution
 /// context.
 template <typename Policy, typename Callable, typename... Args>
-auto with_policy_and_ctx(Policy &policy, ExecutionContext &ctx, Callable &&f,
-                         Args &&...args)
+auto with_policy_and_ctx(const Policy &policy, ExecutionContext &ctx,
+                         Callable &&f, Args &&...args)
     -> std::invoke_result_t<Callable, Args...> {
 
   // Save the outer execution context (if any) so we can restore it after.

@@ -187,6 +187,7 @@ from .runtime.state import (get_state, get_state_async, to_cupy)
 from .runtime.draw import draw
 from .runtime.unitary import get_unitary
 from .runtime.resource_count import estimate_resources
+from .runtime.dem import dem_from_kernel
 from .runtime.vqe import vqe  # Removed! Use VQE from CUDA-QX
 from .kernel.register_op import register_operation
 from .mlir._mlir_libs._quakeDialects import cudaq_runtime
@@ -380,6 +381,8 @@ _LAZY_ATTRS = {
     'evolve': '.dynamics.evolution',
     'evolve_async': '.dynamics.evolution',
     'IntermediateResultSave': '.dynamics.helpers',
+    'amplitude_encode': '.contrib.encoding',
+    'angular_encode': '.contrib.encoding',
 }
 
 _LAZY_SUBMODULES = {

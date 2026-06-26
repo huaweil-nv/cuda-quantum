@@ -9,6 +9,7 @@
 #pragma once
 
 #include "common/BaseRemoteRESTQPU.h"
+#include <optional>
 
 namespace cudaq {
 
@@ -31,79 +32,32 @@ public:
     }
   }
 
-  /// Reset the execution context
-  virtual void
-  finalizeExecutionContext(ExecutionContext &context) const override {
-    // set the pre-computed expectation value.
-    if (context.name == "observe") {
-      auto expectation = context.result.expectation(GlobalRegisterName);
-      context.expectationValue = expectation;
-    }
+  using BaseRemoteRESTQPU::getCompileTarget;
+  std::unique_ptr<CompileTarget>
+  getCompileTarget(const observe_policy &policy) override {
+    auto target = BaseRemoteRESTQPU::getCompileTarget(policy);
+    // This target handles observable evaluation server-side.
+    // We don't want to split up the circuit into several ansatz
+    // sub circuit.
+    target->pauliTermSplitObservable = std::nullopt;
+    return target;
   }
 
-  KernelThunkResultType unifiedLaunchModule(const AnyModule &module,
-                                            KernelArgs args) override {
-    if (std::holds_alternative<SourceModule>(module)) {
-      const auto &src = std::get<SourceModule>(module);
-      const auto &kernelName = src.getName();
-      CUDAQ_INFO("FermioniqBaseQPU launching kernel ({})", kernelName);
-      auto [quakeModule, context] = Compiler::loadQuakeCodeByName(kernelName);
-      auto compiled = compileImpl(
-          kernelName, [&](Compiler &compiler, ExecutionContext *ctx) {
-            return compiler.runPassPipeline(ctx, kernelName, quakeModule, args,
-                                            std::move(context));
-          });
-      launchImpl(compiled);
-    } else {
-      const auto &compiled = std::get<CompiledModule>(module);
-      CUDAQ_INFO("FermioniqBaseQPU launching kernel via module ({})",
-                 compiled.getName());
-      launchImpl(compiled);
-    }
-    return {};
-  }
-
-  CompiledModule compileModule(const SourceModule &src, KernelArgs args,
-                               bool isEntryPoint) override {
-    const auto &kernelName = src.getName();
-    auto modulePtr = compileModulePreamble(src);
-    CUDAQ_INFO("FermioniqBaseQPU compiling kernel via module ({})", kernelName);
-    return compileImpl(
-        kernelName, [&](Compiler &compiler, ExecutionContext *ctx) {
-          return compiler.runPassPipeline(ctx, kernelName, modulePtr, args);
-        });
-  }
-
-  sample_result launchKernel(sample_policy &policy, const AnyModule &module,
+  sample_result launchKernel(const sample_policy &policy,
+                             const CompiledModule &module,
                              KernelArgs args) override;
 
-  async_sample_result launchKernel(async_sample_policy &policy,
-                                   const AnyModule &module,
+  async_sample_result launchKernel(const async_sample_policy &policy,
+                                   const CompiledModule &module,
                                    KernelArgs args) override;
 
-  CompiledModule compileModule(sample_policy &policy, const SourceModule &src,
-                               KernelArgs args, bool isEntryPoint) override {
-    return compileModuleImpl(policy, src, args, isEntryPoint);
-  }
+  observe_result launchKernel(const observe_policy &policy,
+                              const CompiledModule &module,
+                              KernelArgs args) override;
 
-private:
-  CompiledModule
-  compileImpl(const std::string &kernelName,
-              std::function<CompiledModule(Compiler &, ExecutionContext *)>
-                  runPassPipeline);
-
-  template <typename Policy>
-  CompiledModule compileImpl(Policy &policy, const SourceModule &src,
-                             KernelArgs args, bool isEntryPoint) {
-    const auto &kernelName = src.getName();
-    auto modulePtr = compileModulePreamble(src);
-    CUDAQ_INFO("FermioniqBaseQPU compiling kernel via module ({})", kernelName);
-    return compileImpl(
-        kernelName, [&](Compiler &compiler, ExecutionContext *ctx) {
-          return compiler.runPassPipeline(policy, kernelName, modulePtr, args);
-        });
-  }
-  void launchImpl(const CompiledModule &compiled);
+  async_observe_result launchKernel(const async_observe_policy &policy,
+                                    const CompiledModule &module,
+                                    KernelArgs args) override;
 };
 
 } // namespace cudaq

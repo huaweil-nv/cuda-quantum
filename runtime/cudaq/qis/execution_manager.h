@@ -119,6 +119,7 @@ public:
 
   /// Configure the execution context before an execution.
   void configureExecutionContext(const sample_policy &policy);
+  void configureExecutionContext(const observe_policy &policy);
   void configureExecutionContext(ExecutionContext &ctx);
 
   /// Finalize the execution context after an execution.
@@ -128,6 +129,9 @@ public:
                                         ExecutionContext &ctx) {}
   virtual sample_result
   finalizeExecutionContext(const sample_policy &policy) = 0;
+
+  virtual observe_result
+  finalizeExecutionContext(const observe_policy &policy) = 0;
 
   /// Set up the execution manager for a new execution.
   virtual void beginExecution() {}
@@ -230,6 +234,13 @@ public:
 
 inline sample_result finalize_execution_manager_impl(
     ExecutionManager &mgr, const sample_policy &policy, ExecutionContext &ctx) {
+  return mgr.finalizeExecutionContext(policy);
+}
+
+inline observe_result
+finalize_execution_manager_impl(ExecutionManager &mgr,
+                                const observe_policy &policy,
+                                ExecutionContext &ctx) {
   return mgr.finalizeExecutionContext(policy);
 }
 

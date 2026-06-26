@@ -33,6 +33,8 @@ config.substitutions.append(('%llvmshlibdir', config.llvm_shlib_dir))
 config.substitutions.append(('%pluginext', config.llvm_plugin_ext))
 config.substitutions.append(('%llvmInclude', config.llvm_install + "/include"))
 config.substitutions.append(('%cudaq_lib_dir', config.cudaq_lib_dir))
+config.substitutions.append(('%cudaq_shlibprefix', config.cudaq_shlib_prefix))
+config.substitutions.append(('%cudaq_shlibext', config.cudaq_shlib_ext))
 config.substitutions.append(('%cudaq_target_dir', config.cudaq_target_dir))
 config.substitutions.append(('%cudaq_src_dir', config.cudaq_src_dir))
 config.substitutions.append(('%cudaq_plugin_ext', config.cudaq_plugin_ext))
@@ -49,7 +51,7 @@ for arch in config.targets_to_build.split():
 
 # Exclude a list of directories from the test suite:
 #   - 'Inputs' contain auxiliary inputs for various tests.
-local_excludes = ['Inputs', 'CMakeLists.txt', 'README.txt', 'LICENSE.txt', 'plugin']
+local_excludes = ['Inputs', 'CMakeLists.txt', 'README.txt', 'LICENSE.txt', 'plugin', 'Unit']
 config.excludes = [exclude for exclude in config.excludes] + local_excludes
 
 # The root path where tests are located.
