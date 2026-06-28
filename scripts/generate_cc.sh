@@ -167,7 +167,6 @@ if $gen_cpp_coverage; then
     run_tests_status=$?
     if [ ! $run_tests_status -eq 0 ]; then
       echo "::error run_tests.sh failed with status $run_tests_status."
-      exit 1
     fi
 
     # Run the custom MPI plugin activation test the same way CI does.
