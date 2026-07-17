@@ -1,21 +1,21 @@
 /*******************************************************************************
- * Copyright (c) 2026 NVIDIA Corporation & Affiliates.                         *
+ * Copyright (c) 2022 - 2026 NVIDIA Corporation & Affiliates.                  *
  * All rights reserved.                                                        *
  *                                                                             *
  * This source code and the accompanying materials are made available under    *
  * the terms of the Apache License 2.0 which accompanies this distribution.    *
  ******************************************************************************/
 
-#pragma once
+// CUDA-Q MLIR Python site initializer.
 
-#include "cudaq/realtime/daemon/dispatcher/cudaq_realtime.h"
+#include "cudaq/Optimizer/CAPI/Dialects.h"
+#include "mlir/Bindings/Python/Nanobind.h"
+#include "mlir/Bindings/Python/NanobindAdaptors.h"
 
-#include <cuda_runtime_api.h>
+NB_MODULE(_site_initialize_0, m) {
+  m.doc() = "CUDA-Q MLIR site initializer (default dialect registration).";
 
-namespace cudaq_internal::device_call {
-
-// Optional service-provided synchronizer used when the dispatch loop is owned
-// by the service artifact rather than by a CUDA-Q-created stream.
-using DeviceCallDispatchSynchronizeFn = cudaError_t (*)();
-
-} // namespace cudaq_internal::device_call
+  m.def("register_dialects", [](MlirDialectRegistry registry) {
+    cudaqRegisterAllDialects(registry);
+  });
+}
